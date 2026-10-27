@@ -1,0 +1,16 @@
+# build output
+target/
+node_modules/
+tools/
+
+# local logs / captures
+*.log
+run.out.txt
+run.err.txt
+screenshots/
+
+# editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
