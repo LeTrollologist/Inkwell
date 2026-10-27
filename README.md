@@ -40,11 +40,17 @@
   &nbsp;
   <img src="https://img.shields.io/badge/Rust-1.88%2B-8B7CF6?style=flat-square&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Rust 1.88+" />
   &nbsp;
+  <img src="https://img.shields.io/github/v/release/LeTrollologist/Inkwell?style=flat-square&label=release&color=22D3EE&labelColor=0a0b0f&logo=github" alt="Latest release" />
+  &nbsp;
   <img src="https://img.shields.io/badge/WebView2-Native_Window-22D3EE?style=flat-square&labelColor=0a0b0f" alt="WebView2" />
 </p>
 
 <!-- Tier 3: quick navigation -->
 <p align="center">
+  <a href="https://github.com/LeTrollologist/Inkwell/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Windows_Installer-8B7CF6?style=for-the-badge&logo=windows&logoColor=white&labelColor=0a0b0f" alt="Download" />
+  </a>
+  &nbsp;
   <a href="#run">
     <img src="https://img.shields.io/badge/Quickstart-Run_Inkwell-8B7CF6?style=for-the-badge&logoColor=white&labelColor=0a0b0f" alt="Quickstart" />
   </a>
@@ -92,6 +98,24 @@ the provider.
 └────────────┴───────────────────────────────────┴─────────────────────┘
 ```
 
+## Install
+
+**[Download the latest Windows installer →](https://github.com/LeTrollologist/Inkwell/releases/latest)**
+
+1. Run `Inkwell-Setup-<version>.exe`. It installs per user under
+   `%LOCALAPPDATA%\Programs\Inkwell`, so there is no administrator prompt.
+2. Leave **Open Markdown files with Inkwell** checked if you want `.md`, `.markdown` and `.mdx`
+   files to open here. The desktop shortcut is optional.
+3. Launch Inkwell and open a document. The copilot is optional; add a provider and key in
+   **Settings** (`Ctrl+,`) only when you want it.
+
+Prefer a portable build? Download `inkwell-v<version>-windows-x86_64.zip` and run
+`inkwell.exe`. Silent install, upgrade/uninstall, data locations and troubleshooting are in
+[INSTALL.md](INSTALL.md).
+
+Release builds are currently unsigned, so Windows SmartScreen may ask you to confirm. SHA-256
+checksums and verification commands are published with every release.
+
 ## Highlights
 
 - **Fast, local rendering** — GFM tables, task lists, footnotes, strikethrough and code
@@ -113,7 +137,10 @@ the provider.
 - **No npm, no bundler** — the UI is plain HTML/CSS/JS embedded in the executable and served
   over a private protocol.
 
-## Requirements
+## Build requirements
+
+For installing the app, see [INSTALL.md](INSTALL.md); the items below are for building from
+source.
 
 - Windows 10/11 with **WebView2** (preinstalled on current Windows).
 - **Rust** stable, 1.88 or newer (wry uses edition 2024; keyring 4).
@@ -139,6 +166,9 @@ platforms fall back to the browser file input. On Linux, persistent key storage 
 Secret Service provider (GNOME Keyring or KWallet); without one, Inkwell runs with session-only
 keys and says so in Settings.
 
+Packaging a release additionally needs Python 3.10+ and Inno Setup 6.3+; see
+[RELEASE_PROCESS.md](RELEASE_PROCESS.md).
+
 ## Run
 
 ```powershell
@@ -155,8 +185,15 @@ cargo build --release    # or: scripts\build.ps1
 ```
 
 The executable lands at `target/release/inkwell.exe` and is self-contained (the UI and window
-icon are embedded). There is no installer yet — wrap the exe with Inno Setup, WiX or a
-MSIX package if you need one.
+icon are embedded). To build the portable bundle and the per-user installer locally:
+
+```powershell
+python scripts\pipeline.py v0.1.0 --no-publish
+```
+
+Outputs land in `dist\v0.1.0\`: `inkwell-v0.1.0-windows-x86_64.zip`,
+`Inkwell-Setup-0.1.0.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
+6.3+; see [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full release and publishing flow.
 
 ## Connect a model
 
@@ -270,6 +307,10 @@ unavailable, keys are session-only and the settings dialog explains why.
 ```
 inkwell/
 ├── Cargo.toml
+├── CHANGELOG.md
+├── INSTALL.md
+├── RELEASE_PROCESS.md
+├── installer/         Inno Setup script for the per-user installer
 ├── src/
 │   ├── main.rs        tao event loop, frameless window, embedded webview, file drop
 │   ├── app.rs         IPC dispatch, native file picker, async bridge, asset protocol
@@ -286,7 +327,7 @@ inkwell/
 │   └── vendor/        highlight.js + theme (bundled for offline use)
 ├── assets/icons/      source PNG/ICO icons
 ├── docs/              demo document + screenshot
-└── scripts/           dev/build/test, mock provider, icon generator, UI check
+└── scripts/           dev/build/test, release pipeline, mock provider, icon generator, UI check
 ```
 
 The window is frameless; dragging and edge resizing are forwarded from the titlebar and
@@ -324,6 +365,9 @@ parsing for all three transports, request construction, cancellation/interrupted
 rate-limit and 5xx handling against a local mock server, credential lookup/migration and key
 masking.
 
+The release pipeline runs these checks before packaging and aborts on failure; see
+[RELEASE_PROCESS.md](RELEASE_PROCESS.md).
+
 ## Notes & limitations
 
 - Inkwell is a **viewer**: it renders Markdown but does not edit or save files.
@@ -332,8 +376,11 @@ masking.
   have no filesystem path, so their relative images stay unresolved.
 - Embedded images are capped at 8 MB each and 24 MB per render; remote images must use `https:`.
 - LaTeX is shown as written (no math renderer yet).
-- The executable's file icon is not embedded in the PE (the window and taskbar icon are);
-  add a resource step if you package with an installer.
+- The installer and shortcuts use `assets/icons/icon.ico`; the PE file icon itself is still not
+  embedded, so Explorer may show the generic executable icon for `inkwell.exe`.
+- Release builds are unsigned, so Windows SmartScreen may warn on first launch. SHA-256
+  checksums and verification commands are published with every release; see
+  [INSTALL.md](INSTALL.md).
 - Windows 10/11 is the validated runtime. Linux and macOS builds are not yet tested; on Linux,
   `reqwest` uses native TLS (`libssl-dev`/`pkg-config` for builds) and persistent keys need a
   Secret Service provider such as GNOME Keyring or KWallet.

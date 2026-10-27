@@ -2,12 +2,17 @@
 target/
 node_modules/
 tools/
+dist/
 
 # local logs / captures
 *.log
 run.out.txt
 run.err.txt
 screenshots/
+
+# Python
+__pycache__/
+*.pyc
 
 # editor / OS noise
 .vscode/
