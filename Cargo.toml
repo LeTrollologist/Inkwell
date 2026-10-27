@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A sleek Markdown viewer with a BYOK LLM copilot"
 authors = ["Inkwell"]
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [dependencies]
 tao = "0.37"
@@ -17,6 +17,7 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
 dirs = "6"
 raw-window-handle = "0.6"
+keyring = "4"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

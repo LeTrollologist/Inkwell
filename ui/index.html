@@ -228,6 +228,11 @@
         </header>
 
         <div class="dialog-body">
+          <div class="credential-warning" id="credentialWarning" hidden>
+            <strong>System keychain unavailable</strong>
+            <span id="credentialWarningText"></span>
+          </div>
+
           <label class="field">
             <span class="field-label">Provider</span>
             <select id="providerSelect"></select>
@@ -248,7 +253,7 @@
               <input id="keyInput" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" />
               <button class="ghost-btn" id="clearKeyBtn" hidden>Remove</button>
             </div>
-            <small class="field-hint" id="keyHint">Stored locally in your app config folder.</small>
+            <small class="field-hint" id="keyHint">Stored in the system credential store.</small>
           </label>
 
           <label class="field">

@@ -25,7 +25,7 @@
     <img src="https://img.shields.io/badge/Streaming-SSE_%2B_Reasoning-22D3EE?style=for-the-badge&logo=json&logoColor=white&labelColor=0a0b0f" alt="Streaming" />
   </a>
   <a href="#tests">
-    <img src="https://img.shields.io/badge/Tests-20%2F20_Passing-34D399?style=for-the-badge&logo=checkmarx&logoColor=white&labelColor=0a0b0f" alt="Tests" />
+    <img src="https://img.shields.io/badge/Tests-All_Passing-34D399?style=for-the-badge&logo=checkmarx&logoColor=white&labelColor=0a0b0f" alt="Tests" />
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=0a0b0f" alt="License" />
@@ -38,7 +38,7 @@
   &nbsp;
   <img src="https://img.shields.io/badge/Target-x86__64-22D3EE?style=flat-square&labelColor=0a0b0f" alt="x86_64" />
   &nbsp;
-  <img src="https://img.shields.io/badge/Rust-1.85%2B-8B7CF6?style=flat-square&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Rust 1.85+" />
+  <img src="https://img.shields.io/badge/Rust-1.88%2B-8B7CF6?style=flat-square&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Rust 1.88+" />
   &nbsp;
   <img src="https://img.shields.io/badge/WebView2-Native_Window-22D3EE?style=flat-square&labelColor=0a0b0f" alt="WebView2" />
 </p>
@@ -105,14 +105,14 @@ the provider.
   collapsible *Reasoning* channel for reasoning models, and a working Stop button.
 - **Document-aware** — attach the open document to every message, or quote a passage and
   ask about it.
-- **Keys stay put** — the webview never receives an API key; the Rust core owns them.
+- **Keys stay put** — keys live in the OS credential store; the webview never receives them.
 - **No npm, no bundler** — the UI is plain HTML/CSS/JS embedded in the executable and served
   over a private protocol.
 
 ## Requirements
 
 - Windows 10/11 with **WebView2** (preinstalled on current Windows).
-- **Rust** stable, 1.85 or newer (wry uses edition 2024).
+- **Rust** stable, 1.88 or newer (wry uses edition 2024; keyring 4).
 - A Windows linker for your toolchain:
   - MSVC toolchain: Visual Studio Build Tools with the Windows SDK.
   - GNU toolchain: **MinGW-w64** (`x86_64-w64-mingw32-gcc`). `scripts\dev.ps1` adds a local
@@ -127,6 +127,11 @@ the provider.
   that folder exists. Note that w64devkit 2.10's GCC 16 merged `libgcc_eh` into `libgcc`;
   if the link complains about `-lgcc_eh`, create an empty archive in GCC's lib directory
   (`ar rcs libgcc_eh.a`, then delete it if you upgrade GCC).
+
+**Platform support.** Windows 10/11 is the validated runtime for this release. The wry/tao
+shell and the credential layer also compile on macOS and Linux, but those builds are not yet
+validated. On Linux, persistent key storage requires a Secret Service provider (GNOME Keyring
+or KWallet); without one, Inkwell runs with session-only keys and says so in Settings.
 
 ## Run
 
@@ -151,7 +156,8 @@ MSIX package if you need one.
 
 1. Press <kbd>Ctrl</kbd>+<kbd>,</kbd> (or click the provider chip at the bottom right).
 2. Pick a provider from the list.
-3. Paste your API key. Local endpoints do not need one.
+3. Paste your API key — it goes straight into the OS credential store. Local endpoints do not
+   need one.
 4. Press **Fetch list** to populate model names, or type one manually.
 5. **Save settings** — the dot next to *Assistant* lights up when the provider is ready.
 
@@ -187,6 +193,26 @@ In Settings choose **Custom endpoint**, set the base URL to `http://127.0.0.1:87
 model `mock-thinker`, and leave the API key empty. You get streamed Markdown, a reasoning
 channel and a fake model list — all local.
 
+## Credential storage
+
+API keys live in the operating system's credential store, keyed by service
+`app.inkwell.viewer` and the provider id. `settings.json` contains only non-secret
+configuration: providers, models, endpoints, prompts and preferences.
+
+| Platform | Backend |
+| --- | --- |
+| Windows | Windows Credential Manager |
+| macOS | Keychain |
+| Linux | Secret Service (GNOME Keyring / KWallet) |
+
+If no credential store is available — for example a headless Linux session without a Secret
+Service provider — Inkwell shows a warning in Settings and keeps keys in memory for that
+session only. It never falls back to writing keys to disk. Keys are read by the Rust client
+immediately before a request; the webview only ever receives a `hasKey` boolean.
+
+Older builds stored keys as `apiKey` entries in `settings.json`. On first launch, Inkwell
+imports any such key into the OS credential store and rewrites the file without it.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -208,10 +234,10 @@ Starting Inkwell with a file argument (`inkwell.exe notes.md`) opens it directly
 
 - **Local rendering.** Markdown is parsed in Rust; raw HTML inside a document is escaped
   rather than injected, so a document or model answer cannot run script in the webview.
-- **Keys never reach the page.** The frontend only sees `hasKey` booleans. Keys live in
-  `%APPDATA%\Inkwell\settings.json` (path shown in Settings) and are only used by the Rust
-  HTTP client. WebView state (recent documents, theme, chat thread) stays in
-  `%LOCALAPPDATA%\Inkwell\WebView2`.
+- **Keys stay in the OS keychain.** Windows Credential Manager, macOS Keychain or Linux
+  Secret Service (service `app.inkwell.viewer`). The frontend only sees `hasKey` flags, and
+  the Rust client reads a key at request time. `settings.json` holds no secrets; WebView state
+  (recent documents, theme, chat thread) stays in `%LOCALAPPDATA%\Inkwell\WebView2`.
 - **Locked-down webview.** A strict CSP allows only embedded scripts/styles and blocks
   script/XHR network access (`connect-src 'none'`); provider traffic happens in Rust. Remote
   images referenced by a document still load like any browser image (and reveal your IP to
@@ -220,9 +246,8 @@ Starting Inkwell with a file argument (`inkwell.exe notes.md`) opens it directly
 - **Your data.** The open document is included in a request only when *Document* is
   enabled, and only to the provider you configured.
 
-Keys are stored as plain JSON in your user profile — the usual trade-off for a local-first
-BYOK app. If you need OS-level encryption at rest, wrap that file with your platform's
-secret store (DPAPI/Keychain/libsecret) before shipping.
+Inkwell never writes API keys to `settings.json`. If the native credential store is
+unavailable, keys are session-only and the settings dialog explains why.
 
 
 ## Architecture
@@ -235,7 +260,8 @@ inkwell/
 │   ├── app.rs         IPC dispatch, async bridge, custom asset protocol
 │   ├── llm.rs         OpenAI / Anthropic / Gemini SSE streaming, model listing
 │   ├── markdown.rs    pulldown-cmark renderer, outline/anchors, HTML escaping
-│   ├── settings.rs    persisted settings, key masking, preset providers
+│   ├── credentials.rs OS credential store + session-only fallback
+│   ├── settings.rs    non-secret settings, provider presets, legacy-key migration
 │   └── assets.rs      include_bytes! asset map served to the webview
 ├── ui/
 │   ├── index.html     shell markup
@@ -277,8 +303,8 @@ node scripts\check-ui.js # duplicate functions / missing ids / markup balance
 ```
 
 Covers anchor-id generation and deduplication, front-matter extraction, escaping of raw
-HTML, GFM tables/task lists, SSE parsing for all three transports, request construction and
-key masking.
+HTML, GFM tables/task lists, SSE parsing for all three transports, request construction,
+credential lookup/migration and key masking.
 
 ## Notes & limitations
 
@@ -288,7 +314,9 @@ key masking.
 - LaTeX is shown as written (no math renderer yet).
 - The executable's file icon is not embedded in the PE (the window and taskbar icon are);
   add a resource step if you package with an installer.
-- On Linux, `reqwest` uses native TLS, so `libssl-dev`/`pkg-config` are needed for builds.
+- Windows 10/11 is the validated runtime. Linux and macOS builds are not yet tested; on Linux,
+  `reqwest` uses native TLS (`libssl-dev`/`pkg-config` for builds) and persistent keys need a
+  Secret Service provider such as GNOME Keyring or KWallet.
 
 ## License
 

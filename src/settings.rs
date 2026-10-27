@@ -1,14 +1,16 @@
 //! Persistent settings.
 //!
-//! API keys live in the OS app-config directory and are *never* sent back to the
-//! webview: the frontend only receives `hasKey` flags. Keys are stored in plain
-//! JSON on disk (protected by the OS user profile), which is the usual trade-off
-//! for a local-first BYOK app.
+//! `settings.json` holds only non-secret configuration (providers, models,
+//! endpoints, prompts, preferences). API keys live in the operating system
+//! credential store via [`crate::credentials`] and are never sent back to the
+//! webview: the frontend only receives `hasKey` flags.
 
 use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+use crate::credentials::{CredentialStatus, Credentials};
 
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are Inkwell, a concise and precise reading assistant embedded in a Markdown viewer. \
 Answer questions about the document the user is reading. Prefer Markdown in your replies, quote short snippets when useful, \
@@ -22,7 +24,9 @@ pub struct ProviderConfig {
     /// Transport family: `openai`, `anthropic` or `gemini`.
     pub kind: String,
     pub base_url: String,
-    #[serde(default)]
+    /// Legacy plaintext key from older settings files. It is read once for
+    /// migration and never serialized back to disk.
+    #[serde(default, skip_serializing)]
     pub api_key: String,
     #[serde(default)]
     pub model: String,
@@ -95,10 +99,12 @@ pub struct SettingsView {
     pub max_tokens: u32,
     pub system_prompt: String,
     pub include_document: bool,
+    /// Whether the OS credential store is available, and which backend it is.
+    pub credentials: CredentialStatus,
 }
 
 impl Settings {
-    pub fn view(&self) -> SettingsView {
+    pub fn view(&self, credentials: &Credentials) -> SettingsView {
         SettingsView {
             active_provider: self.active_provider.clone(),
             providers: self
@@ -110,13 +116,14 @@ impl Settings {
                     kind: p.kind.clone(),
                     base_url: p.base_url.clone(),
                     model: p.model.clone(),
-                    has_key: !p.api_key.trim().is_empty(),
+                    has_key: credentials.has(&p.id),
                 })
                 .collect(),
             temperature: self.temperature,
             max_tokens: self.max_tokens,
             system_prompt: self.system_prompt.clone(),
             include_document: self.include_document,
+            credentials: credentials.status().clone(),
         }
     }
 
@@ -157,20 +164,13 @@ impl SettingsInput {
             .providers
             .into_iter()
             .filter(|p| !p.id.trim().is_empty())
-            .map(|p| {
-                let old_key = previous
-                    .providers
-                    .iter()
-                    .find(|old| old.id == p.id)
-                    .map(|old| old.api_key.clone());
-                ProviderConfig {
-                    id: p.id,
-                    label: p.label,
-                    kind: p.kind,
-                    base_url: p.base_url.trim().trim_end_matches('/').to_string(),
-                    model: p.model.trim().to_string(),
-                    api_key: p.api_key.unwrap_or_else(|| old_key.unwrap_or_default()),
-                }
+            .map(|p| ProviderConfig {
+                id: p.id,
+                label: p.label,
+                kind: p.kind,
+                base_url: p.base_url.trim().trim_end_matches('/').to_string(),
+                model: p.model.trim().to_string(),
+                api_key: String::new(),
             })
             .collect();
 
@@ -216,17 +216,75 @@ pub fn load() -> Settings {
     }
 }
 
-pub fn save(incoming: SettingsInput) -> Result<SettingsView, String> {
-    let current = load();
-    let next = incoming.merge(current);
+pub fn save(credentials: &Credentials, incoming: SettingsInput) -> Result<SettingsView, String> {
+    // Persist secrets first: if the credential store rejects a key, do not
+    // commit a provider configuration that claims to have it.
+    for provider in &incoming.providers {
+        if provider.id.trim().is_empty() {
+            continue;
+        }
+        if let Some(key) = provider.api_key.as_deref() {
+            let key = key.trim();
+            if key.is_empty() {
+                credentials.delete(&provider.id)?;
+            } else {
+                credentials.set(&provider.id, key)?;
+            }
+        }
+    }
+
+    let next = incoming.merge(load());
+    write_settings(&next)?;
+    Ok(next.view(credentials))
+}
+
+fn write_settings(settings: &Settings) -> Result<(), String> {
     let path = settings_path();
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
     }
-    let json = serde_json::to_string_pretty(&next)
+    let json = serde_json::to_string_pretty(settings)
         .map_err(|err| format!("cannot serialise settings: {err}"))?;
-    fs::write(&path, json).map_err(|err| format!("cannot write {}: {err}", path.display()))?;
-    Ok(next.view())
+    fs::write(&path, json).map_err(|err| format!("cannot write {}: {err}", path.display()))
+}
+
+/// Moves API keys from an older `settings.json` into the OS credential store
+/// and rewrites the file without them. If the store rejects a key it is kept in
+/// memory for this session only — never written back to disk.
+pub fn migrate_legacy_keys(credentials: &Credentials) {
+    let mut settings = load();
+    let moved = migrate_provider_keys(&mut settings, credentials);
+    if moved == 0 {
+        return;
+    }
+    match write_settings(&settings) {
+        Ok(()) => eprintln!(
+            "inkwell: moved {moved} API key(s) out of settings.json into the credential store"
+        ),
+        Err(err) => eprintln!(
+            "inkwell: could not rewrite settings.json without plaintext keys: {err}"
+        ),
+    }
+}
+
+fn migrate_provider_keys(settings: &mut Settings, credentials: &Credentials) -> usize {
+    let mut moved = 0usize;
+    for provider in &mut settings.providers {
+        if provider.api_key.trim().is_empty() {
+            continue;
+        }
+        let key = std::mem::take(&mut provider.api_key);
+        if let Err(err) = credentials.set(&provider.id, &key) {
+            eprintln!(
+                "inkwell: could not import the saved key for {} into the credential store ({err}); \
+                 keeping it for this session only",
+                provider.label
+            );
+            credentials.set_session_only(&provider.id, &key);
+        }
+        moved += 1;
+    }
+    moved
 }
 
 /// True for OpenAI-compatible endpoints on localhost, where an API key is
@@ -262,31 +320,53 @@ mod tests {
     }
 
     #[test]
-    fn keeps_stored_key_when_input_omits_it() {
-        let mut base = Settings::default();
-        base.providers[0].api_key = "sk-secret".into();
-        let merged = input_with(None).merge(base);
-        assert_eq!(merged.providers[0].api_key, "sk-secret");
+    fn merge_trims_config_and_never_carries_keys() {
+        let merged = input_with(None).merge(Settings::default());
+        assert!(merged.providers[0].api_key.is_empty());
         assert_eq!(merged.providers[0].base_url, "https://api.openai.com/v1");
+        assert_eq!(merged.providers[0].model, "gpt-4o-mini");
         assert_eq!(merged.temperature, 2.0);
         assert_eq!(merged.max_tokens, 64);
     }
 
     #[test]
-    fn empty_string_clears_the_key() {
-        let mut base = Settings::default();
-        base.providers[0].api_key = "sk-secret".into();
-        let merged = input_with(Some("")).merge(base);
-        assert!(merged.providers[0].api_key.is_empty());
+    fn view_reads_presence_from_credentials_without_leaking_keys() {
+        let credentials = Credentials::memory_only();
+        credentials.set("openai", "sk-secret").unwrap();
+        let view = Settings::default().view(&credentials);
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains("sk-secret"));
+        assert!(json.contains("\"hasKey\":true"));
+        assert!(json.contains("\"backend\":\"In-memory session store\""));
+        assert!(json.contains("\"available\":false"));
     }
 
     #[test]
-    fn view_never_leaks_keys() {
-        let mut base = Settings::default();
-        base.providers[0].api_key = "sk-secret".into();
-        let json = serde_json::to_string(&base.view()).unwrap();
-        assert!(!json.contains("sk-secret"));
-        assert!(json.contains("\"hasKey\":true"));
+    fn view_reflects_a_cleared_credential() {
+        let credentials = Credentials::memory_only();
+        credentials.set("openai", "sk-secret").unwrap();
+        credentials.delete("openai").unwrap();
+        let view = Settings::default().view(&credentials);
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("\"hasKey\":false"));
+    }
+
+    #[test]
+    fn legacy_plaintext_keys_are_migrated_and_never_serialized() {
+        let credentials = Credentials::memory_only();
+        let mut settings = Settings::default();
+        settings.providers[0].api_key = "sk-legacy".into();
+
+        let moved = migrate_provider_keys(&mut settings, &credentials);
+
+        assert_eq!(moved, 1);
+        assert!(settings.providers[0].api_key.is_empty());
+        assert_eq!(
+            credentials.get("openai").unwrap().as_deref(),
+            Some("sk-legacy")
+        );
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(!json.contains("sk-legacy"));
     }
 
     #[test]

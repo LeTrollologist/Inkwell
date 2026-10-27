@@ -14,6 +14,7 @@ use tao::window::{ResizeDirection, Window};
 use wry::http::{Request, Response};
 
 use crate::assets;
+use crate::credentials::Credentials;
 use crate::llm::{self, ChatRequest};
 use crate::markdown;
 use crate::settings;
@@ -69,6 +70,7 @@ pub struct AppContext {
     pub client: reqwest::Client,
     pub chats: Mutex<HashMap<String, Arc<AtomicBool>>>,
     pub initial_doc: Mutex<Option<PathBuf>>,
+    pub credentials: Arc<Credentials>,
 }
 
 impl AppContext {
@@ -84,11 +86,14 @@ impl AppContext {
             .user_agent(concat!("Inkwell/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("failed to build the HTTP client");
+        let credentials = Arc::new(Credentials::new());
+        settings::migrate_legacy_keys(&credentials);
         Self {
             runtime,
             client,
             chats: Mutex::new(HashMap::new()),
             initial_doc: Mutex::new(initial_doc),
+            credentials,
         }
     }
 }
@@ -273,9 +278,10 @@ fn dispatch(
                 .unwrap_or_default();
             Some(serde_json::to_value(markdown::render(source)).map_err(|err| err.to_string()))
         }
-        "get_settings" => {
-            Some(serde_json::to_value(settings::load().view()).map_err(|err| err.to_string()))
-        }
+        "get_settings" => Some(
+            serde_json::to_value(settings::load().view(&context.credentials))
+                .map_err(|err| err.to_string()),
+        ),
         "save_settings" => {
             let payload = args.get("payload").cloned().unwrap_or(Value::Null);
             let payload = match serde_json::from_value::<settings::SettingsInput>(payload) {
@@ -283,7 +289,7 @@ fn dispatch(
                 Err(err) => return Some(Err(format!("invalid settings: {err}"))),
             };
             Some(
-                settings::save(payload)
+                settings::save(&context.credentials, payload)
                     .and_then(|view| serde_json::to_value(view).map_err(|err| err.to_string())),
             )
         }
@@ -336,6 +342,10 @@ fn dispatch(
             let Some(provider) = settings.provider(&provider_id).cloned() else {
                 return Some(Err(format!("Unknown provider: {provider_id}")));
             };
+            let provider = match resolve_provider(provider, &context.credentials) {
+                Ok(provider) => provider,
+                Err(err) => return Some(Err(err)),
+            };
             let id = request.id.clone();
             let emitter = emitter.clone();
             let client = context.client.clone();
@@ -360,6 +370,10 @@ fn dispatch(
                     "No provider is selected. Open Settings (Ctrl+,).".to_string()
                 ));
             };
+            let provider = match resolve_provider(provider, &context.credentials) {
+                Ok(provider) => provider,
+                Err(err) => return Some(Err(err)),
+            };
 
             let cancel = Arc::new(AtomicBool::new(false));
             let id = chat_request.id.clone();
@@ -383,3 +397,14 @@ fn dispatch(
     }
 }
 
+
+
+/// `settings.json` never carries secrets, so always resolve the key from the
+/// OS credential store right before building a provider request.
+fn resolve_provider(
+    mut provider: settings::ProviderConfig,
+    credentials: &Credentials,
+) -> Result<settings::ProviderConfig, String> {
+    provider.api_key = credentials.get(&provider.id)?.unwrap_or_default();
+    Ok(provider)
+}

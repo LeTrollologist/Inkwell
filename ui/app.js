@@ -114,6 +114,7 @@ async function loadSettings() {
     state.settings = null;
   }
   syncProviderUI();
+  syncCredentialStatus();
   if (state.settings) {
     $("contextToggle").setAttribute("aria-pressed", String(!!state.settings.includeDocument));
   }
@@ -122,12 +123,29 @@ async function loadSettings() {
 async function loadInfo() {
   try {
     state.info = await invoke("app_info");
+    const backend = state.settings?.credentials?.backend;
     $("storageNote").textContent = state.info.settingsFile
-      ? `Settings and keys are stored at ${state.info.settingsFile}`
+      ? `Settings are stored at ${state.info.settingsFile}${
+          backend ? `. API keys are kept in ${backend}.` : "."
+        }`
       : "";
   } catch {
     /* non-fatal */
   }
+}
+
+function syncCredentialStatus() {
+  const status = state.settings?.credentials;
+  const warning = $("credentialWarning");
+  const text = $("credentialWarningText");
+  if (!status || status.available) {
+    warning.hidden = true;
+    text.textContent = "";
+    return;
+  }
+  warning.hidden = false;
+  const detail = status.detail || "Inkwell could not open a system credential store.";
+  text.textContent = `${detail} Keys entered now are kept in memory only and are lost when Inkwell quits.`;
 }
 /* ------------------------------------------------------------------ markdown */
 
@@ -883,6 +901,7 @@ function openSettings(focusKey = false) {
   $("systemPrompt").value = state.settings.systemPrompt || "";
   $("includeDocInput").checked = state.settings.includeDocument !== false;
   $("saveHint").textContent = "";
+  syncCredentialStatus();
   $("settingsModal").hidden = false;
   setTimeout(() => (focusKey ? $("keyInput") : $("modelInput")).focus(), 40);
 }
@@ -912,6 +931,10 @@ function loadProviderIntoForm(id) {
   const provider = state.settings.providers.find((p) => p.id === id);
   if (!provider) return;
   formProviderId = provider.id;
+  const status = state.settings?.credentials;
+  const backend = status?.backend || "the system credential store";
+  const available = status?.available !== false;
+
   $("providerSelect").value = provider.id;
   $("modelInput").value = provider.model || "";
   $("baseUrlInput").value = provider.baseUrl || "";
@@ -920,11 +943,15 @@ function loadProviderIntoForm(id) {
     ? "Saved — type a new key to replace it"
     : isLocalEndpoint(provider.baseUrl)
       ? "Not required for local endpoints"
-      : "sk-…";
+      : available
+        ? "sk-…"
+        : "Session only — no system keychain";
   $("clearKeyBtn").hidden = !provider.hasKey && !pendingKeys.get(provider.id);
   $("keyHint").textContent = provider.hasKey
-    ? "A key is saved on disk. It is never sent back to this window."
-    : "Stored locally in your app config folder.";
+    ? `Saved in ${backend}. It is never sent back to this window.`
+    : available
+      ? `Stored in ${backend}.`
+      : "Session only — the system credential store is unavailable.";
 }
 
 function captureFormIntoSettings() {
@@ -997,6 +1024,7 @@ async function persistSettings({ silent = true, fromForm = true } = {}) {
   pendingKeys.clear();
   clearedKeys.clear();
   syncProviderUI();
+  syncCredentialStatus();
   $("contextToggle").setAttribute("aria-pressed", String(!!view.includeDocument));
   if (!silent) $("saveHint").textContent = "Saved.";
   return view;
@@ -1496,6 +1524,10 @@ async function boot() {
 
   try {
     await loadSettings();
+    const credentialStatus = state.settings?.credentials;
+    if (credentialStatus && !credentialStatus.available) {
+      toast("System keychain unavailable — API keys will be session-only.", "error");
+    }
     await loadInfo();
     restoreThread();
     await renderThread();
