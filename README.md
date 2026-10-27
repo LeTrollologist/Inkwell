@@ -46,7 +46,7 @@ the provider.
 ## Requirements
 
 - Windows 10/11 with **WebView2** (preinstalled on current Windows).
-- **Rust** stable, 1.77 or newer.
+- **Rust** stable, 1.85 or newer (wry uses edition 2024).
 - A Windows linker for your toolchain:
   - MSVC toolchain: Visual Studio Build Tools with the Windows SDK.
   - GNU toolchain: **MinGW-w64** (`x86_64-w64-mingw32-gcc`). `scripts\dev.ps1` adds a local
@@ -55,6 +55,12 @@ the provider.
   `.cargo\config.toml` pins the GNU target to GCC because the LLVM linker bundled with some
   GNU toolchains miscompiles large binaries on Windows (the app dies at startup with an access
   violation). If you switch to MSVC, the pin does not apply.
+
+  On a fresh clone, install MinGW-w64 (MSYS2 is the least fussy) so
+  `x86_64-w64-mingw32-gcc` is on `PATH`. The scripts also prepend `tools\w64devkit\bin` when
+  that folder exists. Note that w64devkit 2.10's GCC 16 merged `libgcc_eh` into `libgcc`;
+  if the link complains about `-lgcc_eh`, create an empty archive in GCC's lib directory
+  (`ar rcs libgcc_eh.a`, then delete it if you upgrade GCC).
 
 ## Run
 
@@ -138,7 +144,8 @@ Starting Inkwell with a file argument (`inkwell.exe notes.md`) opens it directly
   rather than injected, so a document or model answer cannot run script in the webview.
 - **Keys never reach the page.** The frontend only sees `hasKey` booleans. Keys live in
   `%APPDATA%\Inkwell\settings.json` (path shown in Settings) and are only used by the Rust
-  HTTP client.
+  HTTP client. WebView state (recent documents, theme, chat thread) stays in
+  `%LOCALAPPDATA%\Inkwell\WebView2`.
 - **Locked-down webview.** A strict CSP allows only embedded scripts/styles and blocks
   script/XHR network access (`connect-src 'none'`); provider traffic happens in Rust. Remote
   images referenced by a document still load like any browser image (and reveal your IP to

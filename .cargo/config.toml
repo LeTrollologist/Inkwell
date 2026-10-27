@@ -1,0 +1,6 @@
+# Use GCC for the GNU Windows target. The LLVM linker shipped with some GNU
+# toolchains miscompiles large binaries here (STATUS_ACCESS_VIOLATION at
+# startup); GCC is the conventional linker for *-pc-windows-gnu anyway.
+# Install MinGW-w64 and make sure x86_64-w64-mingw32-gcc is reachable.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"

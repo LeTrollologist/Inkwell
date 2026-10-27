@@ -106,7 +106,8 @@ fn use_full_window_client_area(window: &tao::window::Window) {
     };
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        IsZoomed, NCCALCSIZE_PARAMS, WM_NCCALCSIZE,
+        IsZoomed, NCCALCSIZE_PARAMS, SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_NOZORDER, WM_NCCALCSIZE,
     };
 
     unsafe extern "system" fn subclass_proc(
@@ -138,6 +139,17 @@ fn use_full_window_client_area(window: &tao::window::Window) {
             let hwnd = win32.hwnd.get() as HWND;
             unsafe {
                 SetWindowSubclass(hwnd, Some(subclass_proc), 1, 0);
+                // Force a non-client recalculation so the new client rect applies
+                // before the webview is created.
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
             }
         }
     }

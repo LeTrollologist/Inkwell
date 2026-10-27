@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A sleek Markdown viewer with a BYOK LLM copilot"
 authors = ["Inkwell"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.85"
 
 [dependencies]
 tao = "0.37"
