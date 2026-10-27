@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'none'"
+    />
+    <title>Inkwell</title>
+    <link rel="stylesheet" href="vendor/hljs-dark.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app" id="app" data-chat="open" data-rail="open" data-view="rendered">
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <span class="logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M5 18V6.5L12 14l7-7.5V18" />
+              <path d="M8 20.5h8" class="logo-bar" />
+            </svg>
+          </span>
+          <span class="brand-name">Inkwell</span>
+        </div>
+
+        <div class="titlebar-center" data-tauri-drag-region>
+          <span class="doc-title" id="docTitle">No document</span>
+          <span class="doc-meta" id="docMeta"></span>
+        </div>
+
+        <div class="titlebar-actions">
+          <button class="icon-btn" id="railBtn" title="Toggle sidebar (Ctrl+B)" aria-label="Toggle sidebar"></button>
+          <button class="icon-btn" id="sourceBtn" title="Toggle source view (Ctrl+U)" aria-label="Toggle source view"></button>
+          <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"></button>
+          <button class="icon-btn" id="settingsBtn" title="Settings (Ctrl+,)" aria-label="Settings"></button>
+          <button class="pill-btn" id="chatToggle" title="Toggle assistant (Ctrl+J)">
+            <span class="pill-dot"></span>
+            <span>Ask Inkwell</span>
+          </button>
+        </div>
+
+        <div class="window-controls">
+          <button class="win-btn" id="winMin" title="Minimize" aria-label="Minimize">
+            <svg viewBox="0 0 12 12"><path d="M2.5 6.5h7" /></svg>
+          </button>
+          <button class="win-btn" id="winMax" title="Maximize" aria-label="Maximize">
+            <svg viewBox="0 0 12 12"><rect x="2.75" y="2.75" width="6.5" height="6.5" rx="1" /></svg>
+          </button>
+          <button class="win-btn win-close" id="winClose" title="Close" aria-label="Close">
+            <svg viewBox="0 0 12 12"><path d="m3 3 6 6M9 3l-6 6" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="rail" id="rail">
+          <div class="rail-head">
+            <button class="ghost-btn grow" id="openBtn">Open a file</button>
+            <button class="ghost-btn" id="pasteBtn" title="Render pasted Markdown">Paste</button>
+            <input type="file" id="fileInput" accept=".md,.markdown,.mdx,.mdown,.mkd,.txt,text/markdown,text/plain" hidden />
+          </div>
+
+          <div class="rail-scroll">
+            <section class="rail-group">
+              <div class="rail-label">
+                <span>On this page</span>
+                <span class="rail-count" id="tocCount"></span>
+              </div>
+              <nav class="toc" id="toc" aria-label="Document outline">
+                <p class="rail-hint">Open a document to see its outline.</p>
+              </nav>
+            </section>
+
+            <section class="rail-group">
+              <div class="rail-label">
+                <span>Recent</span>
+                <button class="rail-clear" id="clearRecents" title="Forget recent documents">Clear</button>
+              </div>
+              <ul class="recents" id="recents"></ul>
+            </section>
+          </div>
+
+          <div class="rail-foot">
+            <button class="provider-pill" id="railProvider">
+              <span class="status-dot" id="railDot"></span>
+              <span id="railProviderLabel">No provider</span>
+            </button>
+          </div>
+        </aside>
+
+        <main class="reader" id="reader">
+          <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+
+          <section class="empty" id="empty">
+            <div class="empty-card">
+              <div class="empty-art" aria-hidden="true">
+                <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="10" y="6" width="34" height="46" rx="4" />
+                  <path d="M18 16h18M18 23h18M18 30h12" />
+                  <rect x="24" y="30" width="32" height="26" rx="4" class="art-accent" />
+                  <path d="M32 42h16M32 48h10" class="art-accent" />
+                </svg>
+              </div>
+              <h1>Nothing open yet</h1>
+              <p>Drop a Markdown file anywhere in this window, or start with a sample to see what Inkwell can do.</p>
+              <div class="empty-actions">
+                <button class="primary-btn" id="emptyOpen">Open Markdown</button>
+                <button class="ghost-btn" id="sampleBtn">Load sample</button>
+              </div>
+              <div class="empty-hints">
+                <span><kbd>Ctrl</kbd> <kbd>O</kbd> open</span>
+                <span><kbd>Ctrl</kbd> <kbd>J</kbd> assistant</span>
+                <span><kbd>Ctrl</kbd> <kbd>,</kbd> settings</span>
+              </div>
+              <p class="empty-privacy">Rendering happens locally in Rust. Your API key stays on this machine.</p>
+            </div>
+          </section>
+
+          <article class="markdown" id="doc" hidden></article>
+          <pre class="source" id="source" hidden></pre>
+
+          <div class="drop-overlay" id="dropOverlay" hidden>
+            <div class="drop-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <path d="M12 16V4m0 0 4 4m-4-4L8 8" />
+                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+              </svg>
+              <span>Drop Markdown to read</span>
+            </div>
+          </div>
+        </main>
+
+        <aside class="chat-panel" id="chatPanel">
+          <header class="chat-head">
+            <div class="chat-title">
+              <span class="chat-mark" aria-hidden="true">M</span>
+              <span>Assistant</span>
+              <span class="status-dot" id="chatDot"></span>
+            </div>
+            <div class="chat-actions">
+              <button class="icon-btn small" id="newChatBtn" title="New thread"></button>
+              <button class="icon-btn small" id="closeChatBtn" title="Close assistant">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="chat-context">
+            <button class="chip" id="providerChip" title="Change provider">
+              <span class="chip-dot"></span>
+              <span id="providerChipText">Configure a provider</span>
+            </button>
+            <span class="chip chip-ghost" id="docChip" hidden>document</span>
+          </div>
+
+          <div class="messages" id="messages">
+            <div class="chat-empty" id="chatEmpty">
+              <p class="chat-empty-title">Ask anything about this page.</p>
+              <p class="chat-empty-sub">Inkwell sends the document you're reading to the provider you choose, using your own key.</p>
+              <div class="suggestions" id="suggestions">
+                <button class="suggestion">Summarize this document in 5 bullets</button>
+                <button class="suggestion">What are the key takeaways?</button>
+                <button class="suggestion">Find inconsistencies or gaps</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer" id="composer">
+            <div class="selection-chip" id="selectionChip" hidden>
+              <span class="selection-label">Quoted passage</span>
+              <span class="selection-text" id="selectionText"></span>
+              <button class="selection-x" id="clearSelection" title="Remove quote">&times;</button>
+            </div>
+            <textarea id="prompt" rows="1" placeholder="Ask about the document…"></textarea>
+            <div class="composer-row">
+              <button class="ghost-btn tiny" id="contextToggle" aria-pressed="true">
+                <span class="ctx-dot"></span> Document
+              </button>
+              <span class="composer-hint">Ctrl+Enter</span>
+              <div class="spacer"></div>
+              <button class="send-btn" id="sendBtn" title="Send (Ctrl+Enter)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12 16-8-6 16-2.5-6.5z"/></svg>
+                <span>Send</span>
+              </button>
+              <button class="send-btn stop" id="stopBtn" hidden>
+                <span class="stop-square"></span>
+                <span>Stop</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="statusbar">
+        <span id="statFile">No document</span>
+        <span class="stat-sep"></span>
+        <span id="statCounts">—</span>
+        <span class="spacer"></span>
+        <span id="statState" class="stat-state">Ready</span>
+        <span class="stat-sep"></span>
+        <button class="stat-provider" id="statProvider">No provider</button>
+      </footer>
+
+      <div class="resize-handles" aria-hidden="true">
+        <div data-resize="n"></div>
+        <div data-resize="s"></div>
+        <div data-resize="e"></div>
+        <div data-resize="w"></div>
+        <div data-resize="ne"></div>
+        <div data-resize="nw"></div>
+        <div data-resize="se"></div>
+        <div data-resize="sw"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="settingsModal" hidden>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <header class="dialog-head">
+          <div>
+            <h2 id="settingsTitle">Assistant settings</h2>
+            <p class="dialog-sub">Bring your own key. Inkwell talks to providers from the Rust side, so keys never enter the page.</p>
+          </div>
+          <button class="icon-btn" id="settingsClose" aria-label="Close settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </header>
+
+        <div class="dialog-body">
+          <label class="field">
+            <span class="field-label">Provider</span>
+            <select id="providerSelect"></select>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Model</span>
+            <div class="input-row">
+              <input id="modelInput" list="modelList" placeholder="gpt-4o-mini" spellcheck="false" />
+              <button class="ghost-btn" id="fetchModels">Fetch list</button>
+            </div>
+            <datalist id="modelList"></datalist>
+          </label>
+
+          <label class="field">
+            <span class="field-label">API key</span>
+            <div class="input-row">
+              <input id="keyInput" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+              <button class="ghost-btn" id="clearKeyBtn" hidden>Remove</button>
+            </div>
+            <small class="field-hint" id="keyHint">Stored locally in your app config folder.</small>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Base URL</span>
+            <input id="baseUrlInput" spellcheck="false" placeholder="https://api.openai.com/v1" />
+            <small class="field-hint">Works with any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter…).</small>
+          </label>
+
+          <div class="field-grid">
+            <label class="field">
+              <span class="field-label">Temperature <b id="tempValue">0.3</b></span>
+              <input id="tempInput" type="range" min="0" max="2" step="0.1" value="0.3" />
+            </label>
+            <label class="field">
+              <span class="field-label">Max tokens</span>
+              <input id="maxTokensInput" type="number" min="64" max="32000" step="64" value="1500" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span class="field-label">System prompt</span>
+            <textarea id="systemPrompt" rows="3" spellcheck="false"></textarea>
+          </label>
+
+          <label class="check">
+            <input type="checkbox" id="includeDocInput" checked />
+            <span>Attach the current document to every message</span>
+          </label>
+
+          <p class="storage-note" id="storageNote"></p>
+        </div>
+
+        <footer class="dialog-foot">
+          <span class="hint" id="saveHint"></span>
+          <div class="spacer"></div>
+          <button class="ghost-btn" id="settingsCancel">Cancel</button>
+          <button class="primary-btn" id="settingsSave">Save settings</button>
+        </footer>
+      </div>
+    </div>
+
+    <div class="modal" id="pasteModal" hidden>
+      <div class="dialog narrow" role="dialog" aria-modal="true" aria-labelledby="pasteTitle">
+        <header class="dialog-head">
+          <div>
+            <h2 id="pasteTitle">Render Markdown</h2>
+            <p class="dialog-sub">Paste anything — a README, an LLM answer, meeting notes.</p>
+          </div>
+          <button class="icon-btn" id="pasteClose" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </header>
+        <div class="dialog-body">
+          <textarea id="pasteArea" class="paste-area" placeholder="# Title&#10;&#10;Paste your Markdown here…" spellcheck="false"></textarea>
+        </div>
+        <footer class="dialog-foot">
+          <span class="hint">Ctrl+Enter to render</span>
+          <div class="spacer"></div>
+          <button class="ghost-btn" id="pasteCancel">Cancel</button>
+          <button class="primary-btn" id="pasteRender">Render</button>
+        </footer>
+      </div>
+    </div>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <script src="bridge.js"></script>
+    <script src="vendor/highlight.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+
