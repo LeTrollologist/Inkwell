@@ -1,4 +1,70 @@
+<div align="center">
+
+<img src="assets/icons/256x256.png" width="112" height="112" alt="Inkwell logo" />
+
 # Inkwell
+
+### *A sleek Markdown reader with a bring-your-own-key LLM copilot*
+
+**Local Rust rendering &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry**
+
+<br />
+
+<!-- Tier 1: project meta -->
+<p align="center">
+  <a href="https://github.com/LeTrollologist/Inkwell/releases">
+    <img src="https://img.shields.io/badge/Release-v0.1.0_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
+  </a>
+  <a href="src/markdown.rs">
+    <img src="https://img.shields.io/badge/Renderer-pulldown--cmark_%2B_Rust-22D3EE?style=for-the-badge&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Renderer" />
+  </a>
+  <a href="#connect-a-model">
+    <img src="https://img.shields.io/badge/Providers-Any_Endpoint-8B7CF6?style=for-the-badge&logoColor=white&labelColor=0a0b0f" alt="Providers" />
+  </a>
+  <a href="src/llm.rs">
+    <img src="https://img.shields.io/badge/Streaming-SSE_%2B_Reasoning-22D3EE?style=for-the-badge&logo=json&logoColor=white&labelColor=0a0b0f" alt="Streaming" />
+  </a>
+  <a href="#tests">
+    <img src="https://img.shields.io/badge/Tests-20%2F20_Passing-34D399?style=for-the-badge&logo=checkmarx&logoColor=white&labelColor=0a0b0f" alt="Tests" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=0a0b0f" alt="License" />
+  </a>
+</p>
+
+<!-- Tier 2: stack -->
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-10_%2F_11-8B7CF6?style=flat-square&labelColor=0a0b0f" alt="Windows 10 / 11" />
+  &nbsp;
+  <img src="https://img.shields.io/badge/Target-x86__64-22D3EE?style=flat-square&labelColor=0a0b0f" alt="x86_64" />
+  &nbsp;
+  <img src="https://img.shields.io/badge/Rust-1.85%2B-8B7CF6?style=flat-square&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Rust 1.85+" />
+  &nbsp;
+  <img src="https://img.shields.io/badge/WebView2-Native_Window-22D3EE?style=flat-square&labelColor=0a0b0f" alt="WebView2" />
+</p>
+
+<!-- Tier 3: quick navigation -->
+<p align="center">
+  <a href="#run">
+    <img src="https://img.shields.io/badge/Quickstart-Run_Inkwell-8B7CF6?style=for-the-badge&logoColor=white&labelColor=0a0b0f" alt="Quickstart" />
+  </a>
+  &nbsp;
+  <a href="#connect-a-model">
+    <img src="https://img.shields.io/badge/BYOK-Connect_a_Model-22D3EE?style=for-the-badge&logoColor=white&labelColor=0a0b0f" alt="BYOK" />
+  </a>
+  &nbsp;
+  <a href="#keyboard-shortcuts">
+    <img src="https://img.shields.io/badge/Shortcuts-Keyboard_Map-8B7CF6?style=for-the-badge&logoColor=white&labelColor=0a0b0f" alt="Shortcuts" />
+  </a>
+  &nbsp;
+  <a href="#architecture">
+    <img src="https://img.shields.io/badge/Architecture-How_It_Works-22D3EE?style=for-the-badge&logoColor=white&labelColor=0a0b0f" alt="Architecture" />
+  </a>
+</p>
+
+</div>
+
+---
 
 A sleek desktop Markdown viewer in Rust with a built-in, bring-your-own-key LLM copilot.
 
