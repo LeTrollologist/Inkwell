@@ -2,6 +2,7 @@
 
 mod app;
 mod assets;
+mod credentials;
 mod llm;
 mod markdown;
 mod settings;
