@@ -22,6 +22,7 @@ use crate::settings;
 pub enum UserEvent {
     Ipc(String),
     Script(String),
+    OpenPath(PathBuf),
     Close,
 }
 
@@ -108,7 +109,7 @@ struct IpcRequest {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct OpenedDocument {
+pub(crate) struct OpenedDocument {
     name: String,
     content: String,
     path: Option<String>,
@@ -144,7 +145,7 @@ pub fn serve_asset(request: Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
     }
 }
 
-fn is_markdown(path: &Path) -> bool {
+pub(crate) fn is_markdown(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| {
@@ -163,7 +164,7 @@ pub fn initial_path_from_args() -> Option<PathBuf> {
         .find(|path| path.is_file() && is_markdown(path))
 }
 
-fn read_document(path: &Path) -> Result<OpenedDocument, String> {
+pub(crate) fn read_document(path: &Path) -> Result<OpenedDocument, String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("Cannot read {}: {err}", path.display()))?;
     if metadata.len() > 16 * 1024 * 1024 {
@@ -183,9 +184,18 @@ fn read_document(path: &Path) -> Result<OpenedDocument, String> {
     })
 }
 
+fn is_allowed_external_url(url: &str) -> bool {
+    if url.chars().any(char::is_control) {
+        return false;
+    }
+    let lower = url.to_ascii_lowercase();
+    ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
+}
+
 fn open_external(url: &str) -> Result<(), String> {
-    let allowed = ["http://", "https://", "mailto:"];
-    if !allowed.iter().any(|prefix| url.starts_with(prefix)) {
+    if !is_allowed_external_url(url) {
         return Err("Only http(s) and mailto links can be opened.".into());
     }
 
@@ -203,6 +213,61 @@ fn open_external(url: &str) -> Result<(), String> {
     result
         .map(|_| ())
         .map_err(|err| format!("Could not open the link: {err}"))
+}
+
+#[cfg(target_os = "windows")]
+fn pick_document_path(window: &Window) -> Result<Option<PathBuf>, String> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        CommDlgExtendedError, GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR,
+        OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
+
+    let filter: Vec<u16> =
+        "Markdown (*.md;*.markdown;*.mdx;*.txt)\0*.md;*.markdown;*.mdx;*.mdown;*.mkd;*.txt\0All files (*.*)\0*.*\0\0"
+            .encode_utf16()
+            .collect();
+    let title: Vec<u16> = "Open a Markdown document\0".encode_utf16().collect();
+    let mut buffer = [0u16; 4096];
+
+    let owner = if let Ok(handle) = window.window_handle() {
+        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+            win32.hwnd.get() as HWND
+        } else {
+            std::ptr::null_mut()
+        }
+    } else {
+        std::ptr::null_mut()
+    };
+
+    let mut ofn: OPENFILENAMEW = unsafe { std::mem::zeroed() };
+    ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = filter.as_ptr();
+    ofn.lpstrFile = buffer.as_mut_ptr();
+    ofn.nMaxFile = buffer.len() as u32;
+    ofn.lpstrTitle = title.as_ptr();
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    let picked = unsafe { GetOpenFileNameW(&mut ofn) };
+    if picked == 0 {
+        let code = unsafe { CommDlgExtendedError() };
+        if code != 0 {
+            return Err(format!("The file picker failed (error {code:#x})."));
+        }
+        return Ok(None);
+    }
+
+    let len = buffer.iter().position(|&ch| ch == 0).unwrap_or(0);
+    Ok(Some(PathBuf::from(String::from_utf16_lossy(
+        &buffer[..len],
+    ))))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn pick_document_path(_window: &Window) -> Result<Option<PathBuf>, String> {
+    Err("The native file picker is not supported on this platform yet.".to_string())
 }
 
 fn resize_direction(name: &str) -> Option<ResizeDirection> {
@@ -276,7 +341,16 @@ fn dispatch(
                 .get("markdown")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            Some(serde_json::to_value(markdown::render(source)).map_err(|err| err.to_string()))
+            let base_dir = args
+                .get("basePath")
+                .and_then(Value::as_str)
+                .map(Path::new)
+                .filter(|path| path.is_file())
+                .and_then(Path::parent);
+            Some(
+                serde_json::to_value(markdown::render_with(source, base_dir))
+                    .map_err(|err| err.to_string()),
+            )
         }
         "get_settings" => Some(
             serde_json::to_value(settings::load().view(&context.credentials))
@@ -317,6 +391,14 @@ fn dispatch(
                 None => Ok(Value::Null),
             })
         }
+        "pick_document" => match pick_document_path(window) {
+            Ok(Some(path)) => Some(
+                read_document(&path)
+                    .and_then(|doc| serde_json::to_value(doc).map_err(|err| err.to_string())),
+            ),
+            Ok(None) => Some(Ok(Value::Null)),
+            Err(err) => Some(Err(err)),
+        },
         "open_external" => {
             let url = args.get("url").and_then(Value::as_str).unwrap_or_default();
             Some(open_external(url).map(|_| Value::Null))
@@ -408,3 +490,21 @@ fn resolve_provider(
     provider.api_key = credentials.get(&provider.id)?.unwrap_or_default();
     Ok(provider)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_urls_are_allow_listed() {
+        assert!(is_allowed_external_url("https://example.com"));
+        assert!(is_allowed_external_url("HTTPS://example.com"));
+        assert!(is_allowed_external_url("mailto:a@b.c"));
+        assert!(!is_allowed_external_url(""));
+        assert!(!is_allowed_external_url("javascript:alert(1)"));
+        assert!(!is_allowed_external_url("data:text/html,<script>"));
+        assert!(!is_allowed_external_url("file:///etc/passwd"));
+        assert!(!is_allowed_external_url("https://example.com/\r\nX: y"));
+    }
+}
+

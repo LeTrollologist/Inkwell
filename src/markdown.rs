@@ -7,7 +7,10 @@
 //! can never inject script tags into the webview.
 
 use std::collections::HashMap;
+use std::path::Path;
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use percent_encoding::percent_decode_str;
 use pulldown_cmark::{html, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Serialize;
 
@@ -30,6 +33,13 @@ pub struct Rendered {
 }
 
 const MAX_INPUT_BYTES: usize = 8 * 1024 * 1024;
+/// Largest single local image embedded into the rendered HTML.
+const MAX_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
+/// Total raw image bytes embedded per render (base64 grows this by ~33%).
+const MAX_EMBEDDED_IMAGE_BYTES: usize = 24 * 1024 * 1024;
+/// Inert 1x1 transparent GIF used when a document points at an unsafe image.
+const BLOCKED_IMAGE: &str =
+    "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 fn level_num(level: HeadingLevel) -> u8 {
     match level {
@@ -111,7 +121,132 @@ fn options() -> Options {
     opts.insert(Options::ENABLE_SMART_PUNCTUATION);
     opts
 }
+
+/// Extracts a URL scheme while ignoring ASCII control/whitespace characters
+/// inside it, mirroring how browsers normalise `java\nscript:`.
+fn scheme_of(url: &str) -> Option<String> {
+    let decoded = percent_decode_str(url).decode_utf8_lossy();
+    let mut scheme = String::new();
+    for ch in decoded.chars() {
+        if ch == ':' {
+            return if scheme.is_empty() { None } else { Some(scheme) };
+        }
+        if ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.') {
+            scheme.push(ch.to_ascii_lowercase());
+        } else if ch.is_ascii_whitespace() || ch.is_ascii_control() {
+            continue;
+        } else {
+            return None;
+        }
+    }
+    None
+}
+
+/// Only web/mail links are kept; `javascript:`, `data:`, `file:` and every
+/// other scheme become an inert fragment. Relative links are left alone for
+/// future in-document navigation.
+fn sanitize_link(dest: &str) -> String {
+    let url = dest.trim();
+    if url.is_empty()
+        || url.chars().any(|ch| ch == '\0' || (ch.is_control() && ch != '\t'))
+    {
+        return "#".to_string();
+    }
+    match scheme_of(url).as_deref() {
+        None | Some("http") | Some("https") | Some("mailto") => url.to_string(),
+        Some(_) => "#".to_string(),
+    }
+}
+
+fn is_safe_data_image(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    [
+        "data:image/png;base64,",
+        "data:image/jpeg;base64,",
+        "data:image/gif;base64,",
+        "data:image/webp;base64,",
+        "data:image/avif;base64,",
+        "data:image/bmp;base64,",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix))
+}
+
+fn image_mime(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        _ => return None,
+    })
+}
+
+/// Reads a relative image beneath `base` and turns it into a data URL. The
+/// canonical path must stay inside the document's folder, so `../` cannot be
+/// used to pull arbitrary files into the page.
+fn embed_relative_image(dest: &str, base: &Path, total: &mut usize) -> Option<String> {
+    let without_suffix = dest.split(['?', '#']).next().unwrap_or(dest);
+    let decoded = percent_decode_str(without_suffix).decode_utf8().ok()?;
+    if decoded.is_empty()
+        || decoded.starts_with('/')
+        || decoded.starts_with('\\')
+        || decoded.contains('\0')
+    {
+        return None;
+    }
+
+    let base = base.canonicalize().ok()?;
+    let candidate = base.join(decoded.as_ref()).canonicalize().ok()?;
+    if !candidate.starts_with(&base) || !candidate.is_file() {
+        return None;
+    }
+    let mime = image_mime(&candidate)?;
+    let size = std::fs::metadata(&candidate).ok()?.len();
+    if size == 0 || size > MAX_IMAGE_BYTES {
+        return None;
+    }
+    let size = size as usize;
+    if total.saturating_add(size) > MAX_EMBEDDED_IMAGE_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(&candidate).ok()?;
+    *total += bytes.len();
+    Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+}
+
+fn sanitize_image(dest: &str, base: Option<&Path>, total: &mut usize) -> String {
+    let url = dest.trim();
+    if url.is_empty() || url.contains('\0') {
+        return BLOCKED_IMAGE.to_string();
+    }
+
+    if let Some(base) = base {
+        if scheme_of(url).is_none() && !url.starts_with('/') && !url.starts_with('\\') {
+            if let Some(data) = embed_relative_image(url, base, total) {
+                return data;
+            }
+        }
+    }
+
+    match scheme_of(url).as_deref() {
+        None | Some("http") | Some("https") => url.to_string(),
+        Some("data") if is_safe_data_image(url) => url.to_string(),
+        _ => BLOCKED_IMAGE.to_string(),
+    }
+}
+#[cfg(test)]
 pub fn render(source: &str) -> Rendered {
+    render_with(source, None)
+}
+
+/// Renders Markdown. When `base_dir` is supplied (a locally opened document),
+/// relative image paths inside that folder are embedded as data URLs.
+pub fn render_with(source: &str, base_dir: Option<&Path>) -> Rendered {
     let truncated = source.len() > MAX_INPUT_BYTES;
     let source = if truncated {
         let mut end = MAX_INPUT_BYTES;
@@ -173,13 +308,40 @@ pub fn render(source: &str) -> Rendered {
         *count += 1;
     }
 
-    // Pass 2 - HTML, with anchor ids and raw HTML neutralised.
+    // Pass 2 - HTML, with anchor ids, raw HTML neutralised and URLs sanitised.
     let mut cursor = 0usize;
+    let mut embedded_total = 0usize;
     let mut events: Vec<Event> = Vec::new();
     for event in Parser::new_ext(&body, opts) {
         match event {
             // Untrusted HTML (documents and model output) is shown as text.
             Event::Html(raw) | Event::InlineHtml(raw) => events.push(Event::Text(raw)),
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                title,
+                id,
+            }) => {
+                events.push(Event::Start(Tag::Link {
+                    link_type,
+                    dest_url: sanitize_link(&dest_url).into(),
+                    title,
+                    id,
+                }));
+            }
+            Event::Start(Tag::Image {
+                link_type,
+                dest_url,
+                title,
+                id,
+            }) => {
+                events.push(Event::Start(Tag::Image {
+                    link_type,
+                    dest_url: sanitize_image(&dest_url, base_dir, &mut embedded_total).into(),
+                    title,
+                    id,
+                }));
+            }
             Event::Start(Tag::Heading {
                 level, classes, attrs, ..
             }) => {
@@ -295,5 +457,192 @@ mod tests {
         assert!(rendered.truncated);
         assert!(rendered.html.ends_with("</p>\n"));
     }
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "inkwell-md-{}-{tag}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn unsafe_url_schemes_are_neutralised() {
+        let payloads = [
+            "[x](javascript:alert(1))",
+            "[x](JaVaScRiPt:alert(1))",
+            "[x](java%09script:alert(1))",
+            "[x](%6aavascript:alert(1))",
+            "[x](&#106;avascript:alert(1))",
+            "[x](&#x6a;avascript:alert(1))",
+            "[x](java&#x0A;script:alert(1))",
+            "[x](data:text/html,<script>alert(1)</script>)",
+            "[x](file:///etc/passwd)",
+            "[x](vbscript:msgbox(1))",
+        ];
+        for payload in payloads {
+            let rendered = render(payload);
+            let lower = rendered.html.to_ascii_lowercase();
+            assert!(!lower.contains("javascript:"), "{payload}");
+            assert!(!lower.contains("vbscript:"), "{payload}");
+            assert!(!lower.contains("data:text/html"), "{payload}");
+            assert!(!lower.contains("file:///"), "{payload}");
+            assert!(
+                rendered.html.contains("href=\"#\""),
+                "{payload} => {}",
+                rendered.html
+            );
+        }
+    }
+
+    #[test]
+    fn whitespace_obfuscated_schemes_are_not_links() {
+        // CommonMark treats whitespace in an unquoted destination as the end
+        // of the link, so this stays literal text rather than a URL.
+        let rendered = render("[x](java\tscript:alert(1))");
+        assert!(!rendered.html.to_ascii_lowercase().contains("javascript:"));
+        assert!(!rendered.html.contains("<a "));
+    }
+
+    #[test]
+    fn safe_links_survive() {
+        let rendered = render(
+            "[web](https://example.com/a?b=1) [mail](mailto:a@b.c) \
+             [rel](docs/a.md) [frag](#intro)",
+        );
+        assert!(rendered.html.contains("href=\"https://example.com/a?b=1\""));
+        assert!(rendered.html.contains("href=\"mailto:a@b.c\""));
+        assert!(rendered.html.contains("href=\"docs/a.md\""));
+        assert!(rendered.html.contains("href=\"#intro\""));
+    }
+
+    #[test]
+    fn unsafe_images_use_the_inert_placeholder() {
+        let rendered = render(
+            "![bad](javascript:alert(1)) \
+             ![svg](data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pjwvc2NyaXB0Pjwvc3ZnPg==) \
+             ![entity](&#x64;ata:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pjwvc2NyaXB0Pjwvc3ZnPg==)",
+        );
+        let lower = rendered.html.to_ascii_lowercase();
+        assert!(!lower.contains("javascript:"));
+        assert!(!lower.contains("svg+xml"));
+        assert!(rendered.html.contains(BLOCKED_IMAGE));
+    }
+
+    #[test]
+    fn raster_data_images_and_https_images_survive() {
+        let rendered = render(
+            "![ok](data:image/png;base64,iVBORw0KGgo=) \
+             ![web](https://example.com/pic.png)",
+        );
+        assert!(rendered
+            .html
+            .contains("src=\"data:image/png;base64,iVBORw0KGgo=\""));
+        assert!(rendered.html.contains("src=\"https://example.com/pic.png\""));
+    }
+
+    #[test]
+    fn relative_images_are_embedded_from_the_document_folder() {
+        let dir = temp_dir("embed");
+        std::fs::write(dir.join("pic.png"), b"not-a-real-png").unwrap();
+        let rendered = render_with("![alt](pic.png \"title\")", Some(&dir));
+        assert!(rendered.html.contains("src=\"data:image/png;base64,"));
+        assert!(rendered.html.contains("alt=\"alt\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn relative_images_cannot_escape_the_document_folder() {
+        let base = temp_dir("escape");
+        let sub = base.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(base.join("secret.png"), b"secret").unwrap();
+        let rendered = render_with("![x](../secret.png)", Some(&sub));
+        assert!(!rendered.html.contains("data:image/png;base64,"));
+        assert!(!rendered.html.contains("c2VjcmV0"));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn missing_and_non_image_assets_are_not_embedded() {
+        let dir = temp_dir("missing");
+        std::fs::write(dir.join("notes.txt"), b"hello").unwrap();
+        let rendered = render_with("![a](missing.png) ![b](notes.txt)", Some(&dir));
+        assert!(!rendered.html.contains("data:image/"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn html_injection_variants_are_escaped() {
+        let payloads = [
+            "<img src=x onerror=alert(1)>",
+            "<svg onload=alert(1)>",
+            "<iframe src=javascript:alert(1)>",
+            "</script><script>alert(1)</script>",
+            "<!--><script>alert(1)</script>-->",
+            "<math><mtext><script>alert(1)</script></mtext></math>",
+        ];
+        for payload in payloads {
+            let rendered = render(payload);
+            let lower = rendered.html.to_ascii_lowercase();
+            assert!(!lower.contains("<script"), "{payload}");
+            assert!(!lower.contains("<iframe"), "{payload}");
+            assert!(!lower.contains("<svg"), "{payload}");
+            assert!(!lower.contains("<img"), "{payload}");
+            assert!(!lower.contains("<math"), "{payload}");
+        }
+    }
+
+    #[test]
+    fn llm_output_is_escaped_and_sanitised() {
+        let answer = "Use this:\n\n```html\n<script>alert('x')</script>\n```\n\n\
+                      [click](javascript:alert(1))\n\n\
+                      <img src=x onerror=alert(2)>";
+        let rendered = render(answer);
+        let lower = rendered.html.to_ascii_lowercase();
+        assert!(!lower.contains("<script>alert"));
+        assert!(!lower.contains("javascript:"));
+        assert!(rendered.html.contains("&lt;script&gt;"));
+        assert!(rendered.html.contains("&lt;img"));
+    }
+
+    #[test]
+    fn malformed_and_hostile_documents_do_not_panic() {
+        let deep = format!("{}text", "> ".repeat(5_000));
+        let nested = format!("{}item", "- ".repeat(5_000));
+        let samples = [
+            "<",
+            "<div",
+            "```",
+            "![",
+            "[",
+            "|a|b\n|-",
+            "\0\u{1b}[31m",
+            "<a href=\"javascript:alert(1)\"",
+            deep.as_str(),
+            nested.as_str(),
+        ];
+        for sample in samples {
+            let _ = render(sample);
+        }
+    }
+
+    #[test]
+    fn front_matter_titles_are_plain_text() {
+        let rendered =
+            render("---\ntitle: \"<img src=x onerror=alert(1)>\"\n---\n\n# Body\n");
+        assert_eq!(
+            rendered.title.as_deref(),
+            Some("<img src=x onerror=alert(1)>")
+        );
+        assert!(!rendered.html.contains("<img"));
+        assert!(!rendered.html.contains("&lt;script"));
+    }
+
 }
 

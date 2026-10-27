@@ -102,9 +102,13 @@ the provider.
 - **Any model, your key** — OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
   OpenRouter, xAI, Ollama, LM Studio, or any OpenAI-compatible endpoint.
 - **Real streaming** — SSE parsing in Rust, token-by-token markdown rendering, a separate
-  collapsible *Reasoning* channel for reasoning models, and a working Stop button.
+  collapsible *Reasoning* channel for reasoning models, and a Stop button that interrupts a
+  stalled request instead of waiting for the next token.
 - **Document-aware** — attach the open document to every message, or quote a passage and
-  ask about it.
+  ask about it. Local files open through a native picker or drag/drop, and relative images
+  resolve from the document's own folder.
+- **Hardened rendering** — raw HTML is escaped, link and image schemes are allow-listed, and
+  model answers go through the same renderer as local documents.
 - **Keys stay put** — keys live in the OS credential store; the webview never receives them.
 - **No npm, no bundler** — the UI is plain HTML/CSS/JS embedded in the executable and served
   over a private protocol.
@@ -130,8 +134,10 @@ the provider.
 
 **Platform support.** Windows 10/11 is the validated runtime for this release. The wry/tao
 shell and the credential layer also compile on macOS and Linux, but those builds are not yet
-validated. On Linux, persistent key storage requires a Secret Service provider (GNOME Keyring
-or KWallet); without one, Inkwell runs with session-only keys and says so in Settings.
+validated. The native open dialog and drag/drop paths are Windows-only for now; other
+platforms fall back to the browser file input. On Linux, persistent key storage requires a
+Secret Service provider (GNOME Keyring or KWallet); without one, Inkwell runs with session-only
+keys and says so in Settings.
 
 ## Run
 
@@ -227,22 +233,31 @@ imports any such key into the OS credential store and rewrites the file without 
 | `Ctrl+Enter` | Send from anywhere |
 | `Esc` | Close dialogs |
 
-Drag a `.md` file onto the window, or use **Paste** to render Markdown from the clipboard.
-Starting Inkwell with a file argument (`inkwell.exe notes.md`) opens it directly.
+Drag a `.md` file onto the window, use the native **Open** dialog (`Ctrl+O`), or use **Paste**
+to render Markdown from the clipboard. Starting Inkwell with a file argument
+(`inkwell.exe notes.md`) opens it directly.
 
 ## Security & privacy
 
 - **Local rendering.** Markdown is parsed in Rust; raw HTML inside a document is escaped
-  rather than injected, so a document or model answer cannot run script in the webview.
+  rather than injected. Link destinations are restricted to http(s), mailto and relative
+  paths, and images to http(s), safe raster data URLs or local files, so `javascript:`,
+  `file:` and SVG payloads cannot become active content.
+- **Local images.** Relative image paths resolve only when a document was opened with a path
+  (native picker, drag/drop or command line). The canonical file must stay inside the
+  document's folder, use a recognised raster format, and fit the 8 MB per-image / 24 MB total
+  budget; bytes are embedded as data URLs rather than exposed as filesystem URLs.
 - **Keys stay in the OS keychain.** Windows Credential Manager, macOS Keychain or Linux
   Secret Service (service `app.inkwell.viewer`). The frontend only sees `hasKey` flags, and
   the Rust client reads a key at request time. `settings.json` holds no secrets; WebView state
   (recent documents, theme, chat thread) stays in `%LOCALAPPDATA%\Inkwell\WebView2`.
 - **Locked-down webview.** A strict CSP allows only embedded scripts/styles and blocks
   script/XHR network access (`connect-src 'none'`); provider traffic happens in Rust. Remote
-  images referenced by a document still load like any browser image (and reveal your IP to
-  that host).
+  images must use `https:` (the CSP blocks `http:`) and still reveal your IP to that host.
 - **External links** are handed to the OS browser; only `http(s)`/`mailto` are accepted.
+- **Streaming failures are explicit.** Stop cancels the in-flight HTTP request even when the
+  provider has stalled; rate limits include the provider's `Retry-After` hint; interrupted
+  streams report an error rather than a false completion.
 - **Your data.** The open document is included in a request only when *Document* is
   enabled, and only to the provider you configured.
 
@@ -256,10 +271,10 @@ unavailable, keys are session-only and the settings dialog explains why.
 inkwell/
 ├── Cargo.toml
 ├── src/
-│   ├── main.rs        tao event loop, frameless window, embedded webview
-│   ├── app.rs         IPC dispatch, async bridge, custom asset protocol
-│   ├── llm.rs         OpenAI / Anthropic / Gemini SSE streaming, model listing
-│   ├── markdown.rs    pulldown-cmark renderer, outline/anchors, HTML escaping
+│   ├── main.rs        tao event loop, frameless window, embedded webview, file drop
+│   ├── app.rs         IPC dispatch, native file picker, async bridge, asset protocol
+│   ├── llm.rs         cancellable OpenAI / Anthropic / Gemini SSE streaming
+│   ├── markdown.rs    renderer, outline/anchors, HTML escaping, URL/image sanitising
 │   ├── credentials.rs OS credential store + session-only fallback
 │   ├── settings.rs    non-secret settings, provider presets, legacy-key migration
 │   └── assets.rs      include_bytes! asset map served to the webview
@@ -302,15 +317,20 @@ scripts\test.ps1         # or: cargo test
 node scripts\check-ui.js # duplicate functions / missing ids / markup balance
 ```
 
-Covers anchor-id generation and deduplication, front-matter extraction, escaping of raw
-HTML, GFM tables/task lists, SSE parsing for all three transports, request construction,
-credential lookup/migration and key masking.
+The suite has **47 tests**. It covers anchor-id generation and deduplication, front-matter
+extraction, escaping of raw HTML and LLM-style injection payloads, URL-scheme sanitisation,
+malformed documents, GFM tables/task lists, relative-image containment and embedding, SSE
+parsing for all three transports, request construction, cancellation/interrupted streams/
+rate-limit and 5xx handling against a local mock server, credential lookup/migration and key
+masking.
 
 ## Notes & limitations
 
 - Inkwell is a **viewer**: it renders Markdown but does not edit or save files.
-- Remote images are fetched by the webview; relative image paths are not resolved because
-  the file picker does not expose a directory.
+- Relative images are embedded as data URLs and must live inside the document's folder.
+  Documents opened through the browser file-input fallback (non-Windows, or the hidden input)
+  have no filesystem path, so their relative images stay unresolved.
+- Embedded images are capped at 8 MB each and 24 MB per render; remote images must use `https:`.
 - LaTeX is shown as written (no math renderer yet).
 - The executable's file icon is not embedded in the PE (the window and taskbar icon are);
   add a resource step if you package with an installer.

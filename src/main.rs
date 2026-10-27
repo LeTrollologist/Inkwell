@@ -14,7 +14,7 @@ use tao::dpi::{LogicalSize, PhysicalPosition};
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Icon, WindowBuilder};
-use wry::{WebContext, WebViewBuilder};
+use wry::{DragDropEvent, WebContext, WebViewBuilder};
 
 use app::{AppContext, Emitter, UserEvent};
 
@@ -59,11 +59,20 @@ fn main() {
 
     let emitter = Emitter::new(event_loop.create_proxy());
     let ipc_proxy = event_loop.create_proxy();
+    let drop_proxy = event_loop.create_proxy();
 
     let builder = WebViewBuilder::new_with_web_context(&mut web_context)
         .with_url("http://inkwell.localhost/index.html")
         .with_background_color((10, 11, 15, 255))
         .with_custom_protocol("inkwell".into(), |_id, request| app::serve_asset(request))
+        .with_drag_drop_handler(move |event| {
+            if let DragDropEvent::Drop { paths, .. } = event {
+                if let Some(path) = paths.into_iter().find(|path| app::is_markdown(path)) {
+                    let _ = drop_proxy.send_event(UserEvent::OpenPath(path));
+                }
+            }
+            true
+        })
         .with_ipc_handler(move |request: wry::http::Request<String>| {
             // Runs on the webview's message pump: hand the payload to the event
             // loop so commands are executed with access to the window.
@@ -89,6 +98,14 @@ fn main() {
             }
             Event::UserEvent(UserEvent::Ipc(body)) => {
                 app::handle_ipc(&body, &window, &context, &emitter);
+            }
+            Event::UserEvent(UserEvent::OpenPath(path)) => {
+                match app::read_document(&path) {
+                    Ok(doc) => emitter.event("document:open", doc),
+                    Err(message) => {
+                        emitter.event("document:error", serde_json::json!({ "message": message }))
+                    }
+                }
             }
             Event::UserEvent(UserEvent::Close) => *control_flow = ControlFlow::Exit,
             _ => {}

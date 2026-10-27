@@ -149,8 +149,8 @@ function syncCredentialStatus() {
 }
 /* ------------------------------------------------------------------ markdown */
 
-async function renderMarkdown(markdown) {
-  return invoke("render_markdown", { markdown });
+async function renderMarkdown(markdown, basePath = null) {
+  return invoke("render_markdown", { markdown, basePath });
 }
 
 function addHeadingAnchors(root) {
@@ -260,7 +260,7 @@ async function setDocument(name, content, options = {}) {
 
   let rendered;
   try {
-    rendered = await renderMarkdown(content);
+    rendered = await renderMarkdown(content, options.path || null);
   } catch (err) {
     toast(`Could not render this document: ${err}`, "error");
     return;
@@ -403,6 +403,7 @@ function rememberDocument(doc) {
     content: doc.content,
     words: doc.words,
     size: doc.size,
+    path: doc.path || null,
     openedAt: Date.now(),
   });
   let kept = entries.slice(0, 6);
@@ -455,7 +456,10 @@ function renderRecents() {
 
     button.append(name, meta);
     button.addEventListener("click", () => {
-      setDocument(entry.name, entry.content, { size: entry.size });
+      setDocument(entry.name, entry.content, {
+        size: entry.size,
+        path: entry.path || null,
+      });
       toast(`Reopened ${entry.name}`);
     });
     li.appendChild(button);
@@ -469,7 +473,7 @@ function saveSession(doc) {
       localStorage.removeItem(LS.session);
       return;
     }
-    localStorage.setItem(LS.session, JSON.stringify({ name: doc.name, content: doc.content }));
+    localStorage.setItem(LS.session, JSON.stringify({ name: doc.name, content: doc.content, path: doc.path || null }));
   } catch {
     /* ignore */
   }
@@ -481,7 +485,10 @@ async function restoreSession() {
     if (!raw) return false;
     const parsed = JSON.parse(raw);
     if (!parsed?.content) return false;
-    await setDocument(parsed.name || "untitled.md", parsed.content, { remember: false });
+    await setDocument(parsed.name || "untitled.md", parsed.content, {
+      remember: false,
+      path: parsed.path || null,
+    });
     return true;
   } catch {
     return false;
@@ -505,9 +512,21 @@ async function openFile(file) {
   }
 }
 
-function pickFile() {
-  $("fileInput").value = "";
-  $("fileInput").click();
+async function pickFile() {
+  try {
+    const doc = await invoke("pick_document");
+    if (!doc?.content) return;
+    await setDocument(doc.name, doc.content, { path: doc.path, size: doc.size });
+    closeAllModals();
+  } catch (err) {
+    const message = String(err);
+    if (/not supported/i.test(message)) {
+      $("fileInput").value = "";
+      $("fileInput").click();
+      return;
+    }
+    toast(message, "error");
+  }
 }
 
 /* -------------------------------------------------------------------- links */
@@ -880,6 +899,18 @@ function wireLlmEvents() {
     const { id, message } = event.payload || {};
     if (!state.streaming || state.streaming.id !== id) return;
     finishStreaming({ error: message || "The provider returned an error." });
+  });
+}
+
+function wireDocumentEvents() {
+  listen("document:open", (event) => {
+    const doc = event.payload || {};
+    if (!doc.content) return;
+    setDocument(doc.name, doc.content, { path: doc.path, size: doc.size });
+  });
+
+  listen("document:error", (event) => {
+    toast(event.payload?.message || "Could not open that file.", "error");
   });
 }
 
@@ -1457,8 +1488,8 @@ function wireInteractionEvents() {
     event.preventDefault();
     dragDepth = 0;
     $("dropOverlay").hidden = true;
-    const file = event.dataTransfer?.files?.[0];
-    if (file) openFile(file);
+    // Files are opened by the native drag/drop handler in main.rs so the
+    // document keeps its filesystem path (needed for relative images).
   });
 
   // keyboard
@@ -1521,6 +1552,7 @@ async function boot() {
   wireEvents();
   wireInteractionEvents();
   wireLlmEvents();
+  wireDocumentEvents();
 
   try {
     await loadSettings();
