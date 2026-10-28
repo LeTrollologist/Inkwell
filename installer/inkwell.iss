@@ -8,10 +8,10 @@
 #define MyAppExeName "inkwell.exe"
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.1.1"
 #endif
 #ifndef MyAppVersionNumeric
-  #define MyAppVersionNumeric "0.1.0.0"
+  #define MyAppVersionNumeric "0.1.1.0"
 #endif
 
 [Setup]
@@ -58,10 +58,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\target\release\inkwell.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\runtime\x64\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\icons\icon.ico"; DestDir: "{app}"; DestName: "inkwell.ico"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\INSTALL.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
