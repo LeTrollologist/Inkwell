@@ -3,6 +3,25 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.1.1] - 2026-10-27
+
+### Fixed
+
+- **Missing WebView2 loader.** The GNU Windows build links `WebView2Loader.dll`
+  dynamically, but v0.1.0's installer and portable ZIP did not include it. On machines
+  without a copy on `PATH`, `inkwell.exe` failed at startup with a Windows application-error
+  dialog. The loader is now bundled next to `inkwell.exe` in both the installer and the ZIP.
+- `build.rs` stages `WebView2Loader.dll` in `target/debug` / `target/release`, so local
+  `cargo run` no longer depends on a loader that happens to be on the developer's PATH.
+- The installer now ships `THIRD_PARTY_NOTICES.md` for the Microsoft loader.
+
+### Notes
+
+- The pinned loader is Microsoft WebView2Loader `1.0.3800.47` (x64), SHA-256
+  `86545B66CDB0603BC26B626FB9AD610CB6E71F28D468F5EA66DF23B03DDA96D5`.
+- If you installed v0.1.0, uninstall it and install v0.1.1 (or later). Settings and API keys
+  are preserved.
+
 ## [0.1.0] - 2026-10-27
 
 First public release.

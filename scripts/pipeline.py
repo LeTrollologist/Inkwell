@@ -34,6 +34,10 @@ DIST = ROOT / "dist"
 APP_EXE = ROOT / "target" / "release" / "inkwell.exe"
 INSTALLER_ISCC = ROOT / "installer" / "inkwell.iss"
 CHANGELOG = ROOT / "CHANGELOG.md"
+WEBVIEW2_LOADER = ROOT / "assets" / "runtime" / "x64" / "WebView2Loader.dll"
+WEBVIEW2_LOADER_SHA256 = (
+    "86545b66cdb0603bc26b626fb9ad610cb6e71f28d468f5ea66df23b03dda96d5"
+)
 
 ASSET_RE = re.compile(
     r"^(?:"
@@ -281,9 +285,11 @@ def stage_package(tag, version, tag_dir, skip_installer):
 
     files = [
         (APP_EXE, "inkwell.exe"),
+        (WEBVIEW2_LOADER, "WebView2Loader.dll"),
         (ROOT / "README.md", "README.md"),
         (ROOT / "INSTALL.md", "INSTALL.md"),
         (ROOT / "LICENSE", "LICENSE"),
+        (ROOT / "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
         (ROOT / "CHANGELOG.md", "CHANGELOG.md"),
         (ROOT / "assets" / "icons" / "icon.ico", "inkwell.ico"),
     ]
@@ -292,6 +298,9 @@ def stage_package(tag, version, tag_dir, skip_installer):
             fail(f"missing release file: {source}")
         shutil.copy2(source, staging / name)
         print(f"  staged {name} ({source.stat().st_size // 1024} KB)")
+
+    if sha256_file(staging / "WebView2Loader.dll") != WEBVIEW2_LOADER_SHA256:
+        fail("staged WebView2Loader.dll does not match the pinned Microsoft loader")
 
     # Zip timestamps must be after 1980 for compatibility.
     now = time.time()
@@ -372,10 +381,12 @@ def stage_verify(tag, version, tag_dir, assets, skip_installer):
     prefix = f"inkwell-v{version}-windows-x86_64/"
     required = {
         "inkwell.exe",
+        "WebView2Loader.dll",
         "inkwell.ico",
         "README.md",
         "INSTALL.md",
         "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
         "CHANGELOG.md",
     }
     with zipfile.ZipFile(zip_path) as archive:

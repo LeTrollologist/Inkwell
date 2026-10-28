@@ -12,8 +12,8 @@
 
 <!-- Tier 1: project meta -->
 <p align="center">
-  <a href="https://github.com/LeTrollologist/Inkwell/releases">
-    <img src="https://img.shields.io/badge/Release-v0.1.0_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
+  <a href="https://github.com/LeTrollologist/Inkwell/releases/latest">
+    <img src="https://img.shields.io/badge/Release-v0.1.1_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
   </a>
   <a href="src/markdown.rs">
     <img src="https://img.shields.io/badge/Renderer-pulldown--cmark_%2B_Rust-22D3EE?style=for-the-badge&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Renderer" />
@@ -188,11 +188,11 @@ The executable lands at `target/release/inkwell.exe` and is self-contained (the 
 icon are embedded). To build the portable bundle and the per-user installer locally:
 
 ```powershell
-python scripts\pipeline.py v0.1.0 --no-publish
+python scripts\pipeline.py v0.1.1 --no-publish
 ```
 
-Outputs land in `dist\v0.1.0\`: `inkwell-v0.1.0-windows-x86_64.zip`,
-`Inkwell-Setup-0.1.0.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
+Outputs land in `dist\v0.1.1\`: `inkwell-v0.1.1-windows-x86_64.zip`,
+`Inkwell-Setup-0.1.1.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
 6.3+; see [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full release and publishing flow.
 
 ## Connect a model
@@ -310,6 +310,7 @@ inkwell/
 ├── CHANGELOG.md
 ├── INSTALL.md
 ├── RELEASE_PROCESS.md
+├── THIRD_PARTY_NOTICES.md
 ├── installer/         Inno Setup script for the per-user installer
 ├── src/
 │   ├── main.rs        tao event loop, frameless window, embedded webview, file drop
@@ -326,6 +327,7 @@ inkwell/
 │   ├── bridge.js      invoke/listen over wry's postMessage IPC
 │   └── vendor/        highlight.js + theme (bundled for offline use)
 ├── assets/icons/      source PNG/ICO icons
+├── assets/runtime/    Microsoft WebView2Loader.dll bundled with releases
 ├── docs/              demo document + screenshot
 └── scripts/           dev/build/test, release pipeline, mock provider, icon generator, UI check
 ```

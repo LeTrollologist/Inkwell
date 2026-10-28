@@ -13,6 +13,8 @@ A deterministic, local-first release pipeline adapted from **VPack Archiver** an
    the pipeline refuses to build otherwise.
 5. **Clean releases** — only the installer, portable zip and `SHA256SUMS.txt` are published.
 6. **No secrets in artifacts** — API keys live in the OS credential store, never in builds.
+7. **Runtime completeness** — every release bundles Microsoft `WebView2Loader.dll`; the
+   pipeline pins and verifies its SHA-256 before packaging.
 
 ## 2. Prerequisites
 
@@ -40,7 +42,7 @@ If `ISCC.exe` is not on `PATH`, the pipeline also looks in
 
 ## 3. Versioning
 
-1. Update `version` in `Cargo.toml` (start from `0.1.0`).
+1. Update `version` in `Cargo.toml` to the release version.
 2. Add a matching `## [<version>] - YYYY-MM-DD` section to `CHANGELOG.md`.
 3. Commit the changes and merge them to `main`.
 4. Create and push an **annotated** tag:
@@ -98,10 +100,12 @@ make package TAG=v0.1.0
 dist/v0.1.0/
 ├── inkwell-v0.1.0-windows-x86_64/
 │   ├── inkwell.exe
+│   ├── WebView2Loader.dll
 │   ├── inkwell.ico
 │   ├── README.md
 │   ├── INSTALL.md
 │   ├── LICENSE
+│   ├── THIRD_PARTY_NOTICES.md
 │   └── CHANGELOG.md
 ├── inkwell-v0.1.0-windows-x86_64.zip
 ├── Inkwell-Setup-0.1.0.exe
@@ -121,6 +125,7 @@ $tmp = Join-Path $env:TEMP "inkwell-install-test"
 $setup = ".\dist\v0.1.0\Inkwell-Setup-0.1.0.exe"
 Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$tmp" -Wait
 Test-Path "$tmp\inkwell.exe"          # must be True
+Test-Path "$tmp\WebView2Loader.dll"   # must be True
 Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
   Where-Object DisplayName -eq "Inkwell"
 & "$tmp\inkwell.exe"                  # launch smoke test

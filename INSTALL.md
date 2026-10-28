@@ -3,6 +3,9 @@
 Inkwell is a local-first Markdown reader with an optional bring-your-own-key LLM copilot.
 The Windows installer is per-user and does **not** require administrator rights.
 
+> **Upgrading from v0.1.0?** v0.1.0 was missing `WebView2Loader.dll` and could fail at startup
+> on some machines. Install v0.1.1 or newer; your settings and keys are preserved.
+
 ## Requirements
 
 - Windows 10 or 11, 64-bit.
@@ -28,7 +31,7 @@ Release builds are currently **not code-signed**. Windows may show
 verify the download first:
 
 ```powershell
-certutil -hashfile .\Inkwell-Setup-0.1.0.exe SHA256
+certutil -hashfile .\Inkwell-Setup-0.1.1.exe SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -38,7 +41,7 @@ The hashes must match the installer and portable zip in the release.
 
 ```powershell
 # Install (or upgrade in place) without prompts
-.\Inkwell-Setup-0.1.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+.\Inkwell-Setup-0.1.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 Upgrades keep the previous install folder, shortcuts, file-association choice and all user
