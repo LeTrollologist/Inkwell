@@ -40,8 +40,6 @@
   &nbsp;
   <img src="https://img.shields.io/badge/Rust-1.88%2B-8B7CF6?style=flat-square&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Rust 1.88+" />
   &nbsp;
-  <img src="https://img.shields.io/github/v/release/LeTrollologist/Inkwell?style=flat-square&label=release&color=22D3EE&labelColor=0a0b0f&logo=github" alt="Latest release" />
-  &nbsp;
   <img src="https://img.shields.io/badge/WebView2-Native_Window-22D3EE?style=flat-square&labelColor=0a0b0f" alt="WebView2" />
 </p>
 
