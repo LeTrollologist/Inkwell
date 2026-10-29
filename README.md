@@ -6,7 +6,7 @@
 
 ### *A sleek Markdown reader with a bring-your-own-key LLM copilot*
 
-**Local Rust rendering &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry**
+**Local Rust rendering &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry &bull; Free**
 
 <br />
 
