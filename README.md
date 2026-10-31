@@ -6,7 +6,7 @@
 
 ### *A sleek Markdown editor & reader with a bring-your-own-key LLM copilot*
 
-**Local Rust rendering &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry**
+**Local Rust rendering &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry &bull; Free**
 
 <br />
 
@@ -39,8 +39,6 @@
   <img src="https://img.shields.io/badge/Target-x86__64-22D3EE?style=flat-square&labelColor=0a0b0f" alt="x86_64" />
   &nbsp;
   <img src="https://img.shields.io/badge/Rust-1.88%2B-8B7CF6?style=flat-square&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Rust 1.88+" />
-  &nbsp;
-  <img src="https://img.shields.io/github/v/release/LeTrollologist/Inkwell?style=flat-square&label=release&color=22D3EE&labelColor=0a0b0f&logo=github" alt="Latest release" />
   &nbsp;
   <img src="https://img.shields.io/badge/WebView2-Native_Window-22D3EE?style=flat-square&labelColor=0a0b0f" alt="WebView2" />
 </p>
@@ -76,14 +74,14 @@ A sleek desktop Markdown editor and reader in Rust with a built-in, bring-your-o
 
 Inkwell renders Markdown locally in Rust (`pulldown-cmark`), displays it in a frameless
 WebView2 window driven by `wry` + `tao`, and streams chat completions from the provider of
-your choice. No account, no proxy, no telemetry — requests go from your machine straight to
+your choice. No account, no proxy, no telemetry. Requests go from your machine straight to
 the provider.
 
 ![Inkwell reading a Markdown document with the assistant open](docs/screenshot.png)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  M Inkwell     Field Notes — Inkwell · 2.4 KB   ▤  <>  ☾  ⚙  Ask    │
+│  M Inkwell     Field Notes - Inkwell · 2.4 KB   ▤  <>  ☾  ⚙  Ask    │
 ├────────────┬───────────────────────────────────┬─────────────────────┤
 │  Open file │  # Reading, without the noise     │  Assistant      + × │
 │  Paste     │                                   │  OpenAI · gpt-4o    │
@@ -118,26 +116,26 @@ checksums and verification commands are published with every release.
 
 ## Highlights
 
-- **Fast, local rendering** — GFM tables, task lists, footnotes, strikethrough, code fences and
+- **Fast, local rendering** - GFM tables, task lists, footnotes, strikethrough, code fences and
   KaTeX math, rendered by `pulldown-cmark` in Rust.
-- **Editor & reader** — edit Markdown in place, save or save-as, unsaved-change tracking,
+- **Editor & reader** - edit Markdown in place, save or save-as, unsaved-change tracking,
   outline with scroll-spy, reading progress, print/PDF, dark & light themes, frameless window
   with native drag and resize.
-- **Any model, your key** — OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
+- **Any model, your key** - OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
   OpenRouter, xAI, Ollama, LM Studio, or any OpenAI-compatible endpoint.
-- **Real streaming** — SSE parsing in Rust, token-by-token markdown rendering, a separate
+- **Real streaming** - SSE parsing in Rust, token-by-token markdown rendering, a separate
   collapsible *Reasoning* channel for reasoning models, and a Stop button that interrupts a
   stalled request instead of waiting for the next token.
-- **Search-aware assistant** — Search mode retrieves relevant document passages and cites their
+- **Search-aware assistant** - Search mode retrieves relevant document passages and cites their
   headings; Edit mode proposes a complete revised document that you review before applying.
   A thinking toggle requests extended reasoning from supported models.
-- **Document-aware** — attach the open document to every message, or quote a passage and
+- **Document-aware** - attach the open document to every message, or quote a passage and
   ask about it. Local files open through a native picker or drag/drop, and relative images
   resolve from the document's own folder.
-- **Hardened rendering** — raw HTML is escaped, link and image schemes are allow-listed, and
+- **Hardened rendering** - raw HTML is escaped, link and image schemes are allow-listed, and
   model answers go through the same renderer as local documents.
-- **Keys stay put** — keys live in the OS credential store; the webview never receives them.
-- **No npm, no bundler** — the UI is plain HTML/CSS/JS embedded in the executable and served
+- **Keys stay put** - keys live in the OS credential store; the webview never receives them.
+- **No npm, no bundler** - the UI is plain HTML/CSS/JS embedded in the executable and served
   over a private protocol.
 
 ## Build requirements
@@ -202,10 +200,10 @@ Outputs land in `dist\v0.2.0\`: `inkwell-v0.2.0-windows-x86_64.zip`,
 
 1. Press <kbd>Ctrl</kbd>+<kbd>,</kbd> (or click the provider chip at the bottom right).
 2. Pick a provider from the list.
-3. Paste your API key — it goes straight into the OS credential store. Local endpoints do not
+3. Paste your API key - it goes straight into the OS credential store. Local endpoints do not
    need one.
 4. Press **Fetch list** to populate model names, or type one manually.
-5. **Save settings** — the dot next to *Assistant* lights up when the provider is ready.
+5. **Save settings** - the dot next to *Assistant* lights up when the provider is ready.
 
 | Provider | Transport | Default base URL |
 | --- | --- | --- |
@@ -237,7 +235,7 @@ node scripts\mock-llm-server.js
 
 In Settings choose **Custom endpoint**, set the base URL to `http://127.0.0.1:8787/v1`,
 model `mock-thinker`, and leave the API key empty. You get streamed Markdown, a reasoning
-channel and a fake model list — all local.
+channel and a fake model list, all local.
 
 ## Credential storage
 
@@ -251,8 +249,8 @@ configuration: providers, models, endpoints, prompts and preferences.
 | macOS | Keychain |
 | Linux | Secret Service (GNOME Keyring / KWallet) |
 
-If no credential store is available — for example a headless Linux session without a Secret
-Service provider — Inkwell shows a warning in Settings and keeps keys in memory for that
+If no credential store is available - for example a headless Linux session without a Secret
+Service provider - Inkwell shows a warning in Settings and keeps keys in memory for that
 session only. It never falls back to writing keys to disk. Keys are read by the Rust client
 immediately before a request; the webview only ever receives a `hasKey` boolean.
 
