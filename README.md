@@ -13,7 +13,7 @@
 <!-- Tier 1: project meta -->
 <p align="center">
   <a href="https://github.com/LeTrollologist/Inkwell/releases/latest">
-    <img src="https://img.shields.io/badge/Release-v0.3.2_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
+    <img src="https://img.shields.io/badge/Release-v0.3.3_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
   </a>
   <a href="src/markdown.rs">
     <img src="https://img.shields.io/badge/Renderer-pulldown--cmark_%2B_Rust-22D3EE?style=for-the-badge&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Renderer" />
@@ -190,11 +190,11 @@ The executable lands at `target/release/inkwell.exe` and is self-contained (the 
 icon are embedded). To build the portable bundle and the per-user installer locally:
 
 ```powershell
-python scripts\pipeline.py v0.3.2 --no-publish
+python scripts\pipeline.py v0.3.3 --no-publish
 ```
 
-Outputs land in `dist\v0.3.2\`: `inkwell-v0.3.2-windows-x86_64.zip`,
-`Inkwell-Setup-0.3.2.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
+Outputs land in `dist\v0.3.3\`: `inkwell-v0.3.3-windows-x86_64.zip`,
+`Inkwell-Setup-0.3.3.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
 6.3+; see [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full release and publishing flow.
 
 ## Connect a model
@@ -295,8 +295,11 @@ Use the selector in the chat composer:
   Retrieved excerpts are shown in the chat with clickable source links and numbered citations.
   Treat web content as untrusted reference material; Inkwell never executes instructions found
   in search results.
-- **Edit doc** — asks the model for a complete revised Markdown document. Review the proposed
-  edit and choose **Apply to editor**; nothing is written until you press `Ctrl+S`.
+- **Edit doc** — asks the model for a complete revised Markdown document. Inkwell only offers
+  **Apply to editor** when the reply contains a complete closed Markdown block, then shows a
+  preview with line/word counts. You can copy the proposal, apply it, undo the application, or
+  retry when the model misses the fenced-document contract. Nothing is written until you press
+  `Ctrl+S`.
 - **Thinking** — enable *Request reasoning / extended thinking* in Settings to ask supported
   OpenAI reasoning models, Anthropic extended thinking, Gemini thinking and OpenRouter
   reasoning for a reasoning pass. Streamed reasoning appears in the collapsible channel.

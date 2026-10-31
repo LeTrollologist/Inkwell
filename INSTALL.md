@@ -31,7 +31,7 @@ Release builds are currently **not code-signed**. Windows may show
 verify the download first:
 
 ```powershell
-certutil -hashfile .\Inkwell-Setup-0.3.2.exe SHA256
+certutil -hashfile .\Inkwell-Setup-0.3.3.exe SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -41,7 +41,7 @@ The hashes must match the installer and portable zip in the release.
 
 ```powershell
 # Install (or upgrade in place) without prompts
-.\Inkwell-Setup-0.3.2.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+.\Inkwell-Setup-0.3.3.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 Upgrades keep the previous install folder, shortcuts, file-association choice and all user

@@ -2352,12 +2352,55 @@ html[data-theme="light"] .credential-warning strong {
 
 .ai-edit-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 2px;
 }
 
+.ai-edit-stats {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.ai-edit-preview {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.ai-edit-preview summary {
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.ai-edit-preview pre {
+  max-height: 240px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10.8px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.ai-edit-failed {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.06);
+}
+
 .ai-edit.applied {
-  opacity: 0.65;
+  opacity: 0.85;
+}
+
+.ai-edit.applied .ai-edit-hint {
+  color: var(--ok);
 }
 
 .primary-btn.tiny {

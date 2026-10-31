@@ -760,6 +760,9 @@ async function renderThread() {
         if (Array.isArray(message.webSources) && message.webSources.length) {
           renderWebSources(node.root, message.webSources);
         }
+        if (typeof message.editProposal === "string" && message.editProposal.trim()) {
+          addAiEditCard(node.root, message.editProposal);
+        }
       } catch {
         node.body.textContent = message.content;
       }
@@ -791,6 +794,7 @@ function restoreThread() {
         sources: Array.isArray(message.sources) ? message.sources : [],
         webSources: Array.isArray(message.webSources) ? message.webSources : [],
         searchQueries: Array.isArray(message.searchQueries) ? message.searchQueries : [],
+        editProposal: typeof message.editProposal === "string" ? message.editProposal : null,
       }));
   } catch {
     state.thread = [];
@@ -860,19 +864,16 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
     );
   }
   if (stream.mode === "edit" && !error && reason !== "cancelled") {
-    let proposed = extractMarkdownBlock(stream.content);
-    let unfenced = false;
-    if (!proposed) {
-      proposed = stream.content.trim();
-      unfenced = true;
-    }
+    const proposed = extractEditedDocument(stream.content);
     if (proposed) {
-      addAiEditCard(stream.root, proposed, { unfenced });
-      if (unfenced) {
-        toast("No fenced block found; using the full response as the proposed document.");
-      }
+      stream.editProposal = proposed;
+      addAiEditCard(stream.root, proposed);
     } else {
-      toast("The model did not return any edit content.", "error");
+      addEditFailureCard(
+        stream.root,
+        "The model did not return a complete fenced Markdown document, so nothing is available to apply."
+      );
+      toast("Edit response was not a complete fenced document. Nothing was applied.", "error");
     }
   }
 
@@ -891,6 +892,7 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
       sources: stream.fetchHits || [],
       webSources: stream.webHits || [],
       searchQueries: stream.searchQueries || [],
+      editProposal: stream.editProposal || null,
     });
     saveThread();
   }
@@ -1105,15 +1107,61 @@ async function scrollToHeadingText(text) {
   }
 }
 
-function extractMarkdownBlock(text) {
-  const four = text.match(/````(?:markdown|md)?\s*\n([\s\S]*?)````/i);
-  if (four) return four[1].trim();
-  const three = text.match(/```(?:markdown|md)?\s*\n([\s\S]*?)```/i);
-  if (three) return three[1].trim();
-  const tilde = text.match(/~~~(?:markdown|md)?\s*\n([\s\S]*?)~~~/i);
-  if (tilde) return tilde[1].trim();
-  const unclosed = text.match(/(?:^|\n)(?:`{3,4}|~{3,})(?:markdown|md)?\s*\n([\s\S]+)$/i);
-  return unclosed ? unclosed[1].trim() : null;
+function looksLikeEditedDocument(markdown) {
+  const trimmed = markdown.trim();
+  if (trimmed.length < 12) return false;
+  if (
+    /^(?:i'?m sorry|i (?:can't|cannot|am unable)|unable to|as an ai|here(?:'s| is) (?:the|a) revised)/i.test(
+      trimmed
+    )
+  ) {
+    return false;
+  }
+  if (/^(?:`{3,}|~{3,})/.test(trimmed)) return false;
+  const hasStructure =
+    /^(?:#{1,6}\s|---\s*$|\+\+\+|title:|date:|tags:|\*\s+|-\s+|\d+\.\s+|\|)/m.test(trimmed);
+  return hasStructure || trimmed.length > 80;
+}
+
+function extractEditedDocument(text) {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const blocks = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const open = lines[i].match(/^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_+.-]*)\s*$/);
+    if (!open) continue;
+    const fenceChar = open[1][0];
+    const lang = (open[2] || "").toLowerCase();
+    if (lang && !["markdown", "md", "mdx", "text"].includes(lang)) continue;
+    let closeIndex = -1;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const close = lines[j].match(/^\s*(`{3,}|~{3,})\s*$/);
+      if (close && close[1][0] === fenceChar) closeIndex = j;
+    }
+    if (closeIndex === -1) continue;
+    const content = lines.slice(i + 1, closeIndex).join("\n").trim();
+    if (content && looksLikeEditedDocument(content)) {
+      blocks.push({
+        content,
+        score: content.split("\n").length + (lang ? 3 : 0),
+      });
+    }
+    i = closeIndex;
+  }
+  if (!blocks.length) return null;
+  blocks.sort((a, b) => b.score - a.score);
+  return blocks[0].content;
+}
+
+function restoreEditorSnapshot(snapshot) {
+  if (!state.doc) return;
+  $("source").value = snapshot.value;
+  state.doc.content = snapshot.content;
+  state.raw = snapshot.raw;
+  state.doc.size = snapshot.size;
+  state.dirty = snapshot.dirty;
+  setView("source");
+  updateDirtyUI();
+  saveSession(state.doc);
 }
 
 function applyAiEdit(markdown, card) {
@@ -1121,7 +1169,16 @@ function applyAiEdit(markdown, card) {
     toast("Open a document before applying an edit.", "error");
     return;
   }
+  if (card?.classList.contains("applied")) return;
   if (!confirm("Replace the editor content with the AI's revised document?")) return;
+
+  const snapshot = {
+    value: $("source").value,
+    content: state.doc.content,
+    raw: state.raw,
+    size: state.doc.size,
+    dirty: state.dirty,
+  };
   $("source").value = markdown;
   state.doc.content = markdown;
   state.raw = markdown;
@@ -1130,37 +1187,136 @@ function applyAiEdit(markdown, card) {
   setView("source");
   updateDirtyUI();
   saveSession(state.doc);
-  card?.classList.add("applied");
+
+  if (card) {
+    card.classList.add("applied");
+    const hint = card.querySelector(".ai-edit-hint");
+    if (hint) {
+      hint.textContent =
+        "Applied to the editor. Review the document and press Ctrl+S to save; Undo restores the previous content.";
+    }
+    const apply = card.querySelector(".ai-edit-apply");
+    if (apply) {
+      apply.disabled = true;
+      apply.textContent = "Applied";
+    }
+    const actions = card.querySelector(".ai-edit-actions");
+    if (actions && !actions.querySelector(".ai-edit-undo")) {
+      const undo = document.createElement("button");
+      undo.type = "button";
+      undo.className = "ghost-btn tiny ai-edit-undo";
+      undo.textContent = "Undo";
+      undo.addEventListener("click", () => {
+        restoreEditorSnapshot(snapshot);
+        card.classList.remove("applied");
+        if (hint) {
+          hint.textContent =
+            "Undo restored the previous editor content. Nothing was saved automatically.";
+        }
+        if (apply) {
+          apply.disabled = false;
+          apply.textContent = "Apply to editor";
+        }
+        undo.remove();
+        toast("AI edit undone.");
+        $("source").focus();
+      });
+      const dismiss = actions.querySelector(".ai-edit-dismiss");
+      if (dismiss) actions.insertBefore(undo, dismiss);
+      else actions.appendChild(undo);
+    }
+  }
   toast("AI edit loaded in the editor — review and save.");
   $("source").focus();
 }
 
-function addAiEditCard(root, proposed, { unfenced = false } = {}) {
+function addAiEditCard(root, proposed) {
+  if (!root || !proposed.trim()) return null;
   const card = document.createElement("div");
   card.className = "ai-edit";
   const title = document.createElement("strong");
   title.textContent = "AI proposed an edit";
   const hint = document.createElement("span");
-  hint.textContent = unfenced
-    ? "The model returned the document without a code fence; review the full response before applying. Nothing is saved yet."
-    : "The revised document is ready to review; nothing is saved yet.";
+  hint.className = "ai-edit-hint";
+  const unchanged = !!state.doc && proposed.trim() === state.doc.content.trim();
+  hint.textContent = unchanged
+    ? "This proposal matches the current document; there are no changes to apply."
+    : "A complete fenced document was received. Review it before applying; nothing is saved yet.";
+
+  const lines = proposed.split(/\r?\n/).length;
+  const words = proposed.trim().split(/\s+/).filter(Boolean).length;
+  const stats = document.createElement("span");
+  stats.className = "ai-edit-stats";
+  stats.textContent = `${lines} line${lines === 1 ? "" : "s"} · ${words} word${words === 1 ? "" : "s"}`;
+
+  const preview = document.createElement("details");
+  preview.className = "ai-edit-preview";
+  const summary = document.createElement("summary");
+  summary.textContent = "Review proposed Markdown";
+  const code = document.createElement("pre");
+  code.textContent =
+    proposed.length > 6000 ? `${proposed.slice(0, 6000)}\n\n[preview truncated]` : proposed;
+  preview.append(summary, code);
+
   const actions = document.createElement("div");
   actions.className = "ai-edit-actions";
   const apply = document.createElement("button");
   apply.type = "button";
-  apply.className = "primary-btn tiny";
+  apply.className = "primary-btn tiny ai-edit-apply";
   apply.textContent = "Apply to editor";
   apply.addEventListener("click", () => applyAiEdit(proposed, card));
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "ghost-btn tiny";
+  copy.textContent = "Copy";
+  copy.addEventListener("click", () => copyText(proposed, "Proposed document copied"));
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "ghost-btn tiny ai-edit-dismiss";
+  dismiss.textContent = "Dismiss";
+  dismiss.addEventListener("click", () => card.remove());
+  actions.append(apply, copy, dismiss);
+  card.append(title, hint, stats, preview, actions);
+  const meta = root.querySelector(".msg-meta");
+  if (meta) root.insertBefore(card, meta);
+  else root.appendChild(card);
+  return card;
+}
+
+function addEditFailureCard(root, message) {
+  const card = document.createElement("div");
+  card.className = "ai-edit ai-edit-failed";
+  const title = document.createElement("strong");
+  title.textContent = "Edit was not applied";
+  const hint = document.createElement("span");
+  hint.textContent = `${message} The model must return exactly one closed Markdown code block.`;
+  const actions = document.createElement("div");
+  actions.className = "ai-edit-actions";
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "primary-btn tiny";
+  retry.textContent = "Retry edit";
+  retry.disabled = !state.lastEditPrompt;
+  retry.addEventListener("click", () => {
+    const prompt = state.lastEditPrompt;
+    if (!prompt) return;
+    card.remove();
+    const fence = "```";
+    sendMessage(
+      `${prompt}\n\nReturn only one complete Markdown document in a single closed ${fence}markdown block, with no commentary before or after it.`
+    );
+  });
   const dismiss = document.createElement("button");
   dismiss.type = "button";
   dismiss.className = "ghost-btn tiny";
   dismiss.textContent = "Dismiss";
   dismiss.addEventListener("click", () => card.remove());
-  actions.append(apply, dismiss);
+  actions.append(retry, dismiss);
   card.append(title, hint, actions);
   const meta = root.querySelector(".msg-meta");
   if (meta) root.insertBefore(card, meta);
   else root.appendChild(card);
+  return card;
 }
 
 async function sendMessage(override) {
@@ -1191,6 +1347,7 @@ async function sendMessage(override) {
   }
 
   const mode = state.chatMode;
+  if (mode === "edit") state.lastEditPrompt = text;
   if ((mode === "fetch" || mode === "edit") && !state.doc) {
     toast("Open a document before using Fetch or Edit mode.", "error");
     return;

@@ -3,6 +3,23 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.3.3] - 2026-10-31
+
+### Improved
+
+- **Edit mode now requires a complete, closed fenced Markdown document before offering
+  Apply.** Unfenced prose, partial responses and explanations no longer produce an editable
+  proposal. When the contract is missed, the chat shows a clear failure card with a
+  **Retry edit** action instead of applying the wrong content.
+- The edit parser is much more tolerant of real model output: three or four backticks, tildes,
+  mixed-length closing fences, optional language tags, surrounding commentary and nested code
+  fences are handled. This fixes the Gemini-style responses that previously failed.
+- Edit proposals now include a collapsible Markdown preview, line/word counts, a copy action,
+  and an **Undo** action after applying. Applied proposals remain available after reloading the
+  app.
+- The edit prompt now requests exactly one three-backtick closed block and forbids commentary
+  outside it, while the parser still protects against model variations.
+
 ## [0.3.2] - 2026-10-31
 
 ### Fixed
