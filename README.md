@@ -319,7 +319,7 @@ Use the selector in the chat composer:
 
 Drag a `.md` file onto the window, use the native **Open** dialog (`Ctrl+O`), or use **Paste**
 to render Markdown from the clipboard. Starting Inkwell with a file argument
-(`inkwell.exe notes.md`) opens it directly.
+(`inkwell.exe notes.md`) opens it directly. `.txt` files also work with the viewer.
 
 ## Security & privacy
 
