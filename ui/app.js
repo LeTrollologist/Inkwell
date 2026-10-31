@@ -860,11 +860,19 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
     );
   }
   if (stream.mode === "edit" && !error && reason !== "cancelled") {
-    const proposed = extractMarkdownBlock(stream.content);
+    let proposed = extractMarkdownBlock(stream.content);
+    let unfenced = false;
+    if (!proposed) {
+      proposed = stream.content.trim();
+      unfenced = true;
+    }
     if (proposed) {
-      addAiEditCard(stream.root, proposed);
+      addAiEditCard(stream.root, proposed, { unfenced });
+      if (unfenced) {
+        toast("No fenced block found; using the full response as the proposed document.");
+      }
     } else {
-      toast("The model did not return a complete fenced document.", "error");
+      toast("The model did not return any edit content.", "error");
     }
   }
 
@@ -1101,7 +1109,11 @@ function extractMarkdownBlock(text) {
   const four = text.match(/````(?:markdown|md)?\s*\n([\s\S]*?)````/i);
   if (four) return four[1].trim();
   const three = text.match(/```(?:markdown|md)?\s*\n([\s\S]*?)```/i);
-  return three ? three[1].trim() : null;
+  if (three) return three[1].trim();
+  const tilde = text.match(/~~~(?:markdown|md)?\s*\n([\s\S]*?)~~~/i);
+  if (tilde) return tilde[1].trim();
+  const unclosed = text.match(/(?:^|\n)(?:`{3,4}|~{3,})(?:markdown|md)?\s*\n([\s\S]+)$/i);
+  return unclosed ? unclosed[1].trim() : null;
 }
 
 function applyAiEdit(markdown, card) {
@@ -1123,13 +1135,15 @@ function applyAiEdit(markdown, card) {
   $("source").focus();
 }
 
-function addAiEditCard(root, proposed) {
+function addAiEditCard(root, proposed, { unfenced = false } = {}) {
   const card = document.createElement("div");
   card.className = "ai-edit";
   const title = document.createElement("strong");
   title.textContent = "AI proposed an edit";
   const hint = document.createElement("span");
-  hint.textContent = "The revised document is ready to review; nothing is saved yet.";
+  hint.textContent = unfenced
+    ? "The model returned the document without a code fence; review the full response before applying. Nothing is saved yet."
+    : "The revised document is ready to review; nothing is saved yet.";
   const actions = document.createElement("div");
   actions.className = "ai-edit-actions";
   const apply = document.createElement("button");

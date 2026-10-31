@@ -8,10 +8,10 @@
 #define MyAppExeName "inkwell.exe"
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.3.1"
+  #define MyAppVersion "0.3.2"
 #endif
 #ifndef MyAppVersionNumeric
-  #define MyAppVersionNumeric "0.3.1.0"
+  #define MyAppVersionNumeric "0.3.2.0"
 #endif
 
 [Setup]

@@ -264,7 +264,9 @@ pub fn compose_system(req: &ChatRequest) -> String {
             "\n\nYou are editing the full document above. Apply the user's requested change and \
              return the COMPLETE revised Markdown document in exactly one fenced block delimited \
              by four backticks, like ````markdown ... ````. Preserve front matter and everything \
-             the user did not ask to change. Do not add commentary outside the fenced block.",
+             the user did not ask to change. Do not add commentary outside the fenced block. If \
+             fenced blocks are unavailable, return only the complete revised Markdown document \
+             and no commentary.",
         );
     }
     system

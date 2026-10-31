@@ -3,6 +3,21 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.3.2] - 2026-10-31
+
+### Fixed
+
+- **Edit mode accepts full-document responses without a code fence.** Models sometimes return
+  the revised Markdown directly, or use tilde/unclosed fences. Inkwell now treats any non-empty
+  edit response as a proposed document, shows the review card, and warns when no fenced block
+  was detected instead of failing with "did not return a complete fenced document".
+- The edit system prompt now explicitly allows a plain full-document response when fences are
+  unavailable.
+
+### Removed
+
+- Removed the broken v0.1.0 GitHub release and tag, plus its changelog entry. Use v0.1.1 or later.
+
 ## [0.3.1] - 2026-10-31
 
 ### Fixed
@@ -85,41 +100,6 @@ matching the release version when it builds GitHub release notes.
   `86545B66CDB0603BC26B626FB9AD610CB6E71F28D468F5EA66DF23B03DDA96D5`.
 - If you installed v0.1.0, uninstall it and install v0.1.1 (or later). Settings and API keys
   are preserved.
-
-## [0.1.0] - 2026-10-27
-
-First public release.
-
-### Added
-
-- **Windows installer** — per-user Inno Setup wizard, no administrator rights required.
-  Creates Start Menu (and optional desktop) shortcuts, registers an uninstaller, and can
-  associate `.md`, `.markdown`, `.mdx`, `.mdown` and `.mkd` files with Inkwell.
-- **Portable build** — `inkwell-v0.1.0-windows-x86_64.zip` with the executable, docs and icon.
-- **Markdown reader** — GitHub-flavoured Markdown rendered in Rust: tables, task lists,
-  footnotes, strikethrough, code highlighting, outline/scroll-spy, source view, print/PDF,
-  dark and light themes, frameless window with native drag and resize.
-- **BYOK copilot** — OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek, OpenRouter,
-  xAI, Ollama, LM Studio and any OpenAI-compatible endpoint. Document context, passage
-  quoting and a separate reasoning channel are supported.
-- **Local document handling** — native file picker and drag/drop with real filesystem paths;
-  relative images are embedded from the document folder with containment and size limits.
-- **Security controls** — raw HTML is escaped, link/image schemes are allow-listed, and
-  malformed or model-generated Markdown goes through the same hardened renderer.
-- **Streaming robustness** — Stop cancels stalled HTTP requests; rate limits surface
-  `Retry-After`; interrupted, empty and 5xx streams produce clear errors.
-- **OS credential storage** — API keys live in Windows Credential Manager, macOS Keychain or
-  Linux Secret Service. `settings.json` contains no secrets. A session-only, clearly labelled
-  fallback is used when no credential store is available.
-- **Local release pipeline** — deterministic Python pipeline adapted from VPack Archiver and
-  Hollow-Canvas: preflight, build, tests, audit log, packaging, checksums and GitHub release.
-
-### Notes
-
-- Windows builds are currently unsigned. Windows SmartScreen may warn on first launch;
-  SHA-256 checksums are published with every release.
-- Windows 10/11 x64 is the validated runtime. The native installer is Windows-only; other
-  platforms can build from source and use the browser file-input fallback.
 
 ## [Unreleased]
 
