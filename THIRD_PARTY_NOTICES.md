@@ -14,3 +14,12 @@
 
 The rest of Inkwell is MIT licensed; see `LICENSE`. Bundled JavaScript libraries
 under `ui/vendor/` retain their own license headers.
+
+## KaTeX
+
+`ui/vendor/katex/katex.min.js`, `katex.min.css`, and `fonts/*.woff2`
+
+- Copyright Khan Academy and KaTeX contributors.
+- Version: 0.16.22.
+- MIT license; full text in `ui/vendor/katex/LICENSE`.
+- Used for local LaTeX math rendering; no math content is sent to a third party.

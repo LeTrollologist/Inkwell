@@ -17,6 +17,7 @@ use crate::assets;
 use crate::credentials::Credentials;
 use crate::llm::{self, ChatRequest};
 use crate::markdown;
+use crate::search;
 use crate::settings;
 
 pub enum UserEvent {
@@ -118,6 +119,14 @@ pub(crate) struct OpenedDocument {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct SavedDocument {
+    name: String,
+    path: String,
+    size: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AppInfo {
     version: String,
     config_dir: String,
@@ -181,6 +190,26 @@ pub(crate) fn read_document(path: &Path) -> Result<OpenedDocument, String> {
         content: String::from_utf8_lossy(&bytes).to_string(),
         path: Some(path.display().to_string()),
         size: metadata.len(),
+    })
+}
+
+fn write_document(path: &Path, content: &str) -> Result<SavedDocument, String> {
+    if content.len() > 32 * 1024 * 1024 {
+        return Err("That document is too large to save (32 MB limit).".into());
+    }
+    std::fs::write(path, content)
+        .map_err(|err| format!("Cannot save {}: {err}", path.display()))?;
+    let size = std::fs::metadata(path)
+        .map_err(|err| format!("Cannot read back {}: {err}", path.display()))?
+        .len();
+    Ok(SavedDocument {
+        name: path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("document.md")
+            .to_string(),
+        path: path.display().to_string(),
+        size,
     })
 }
 
@@ -270,6 +299,72 @@ fn pick_document_path(_window: &Window) -> Result<Option<PathBuf>, String> {
     Err("The native file picker is not supported on this platform yet.".to_string())
 }
 
+#[cfg(target_os = "windows")]
+fn pick_save_path(window: &Window, default_name: &str) -> Result<Option<PathBuf>, String> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        CommDlgExtendedError, GetSaveFileNameW, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT,
+        OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
+
+    let filter: Vec<u16> =
+        "Markdown (*.md)\0*.md;*.markdown;*.mdx;*.mdown;*.mkd;*.txt\0All files (*.*)\0*.*\0\0"
+            .encode_utf16()
+            .collect();
+    let title: Vec<u16> = "Save Markdown document\0".encode_utf16().collect();
+    let extension: Vec<u16> = "md\0".encode_utf16().collect();
+    let mut buffer = [0u16; 4096];
+    let suggested: Vec<u16> = Path::new(default_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("untitled.md")
+        .encode_utf16()
+        .take(buffer.len() - 1)
+        .collect();
+    buffer[..suggested.len()].copy_from_slice(&suggested);
+
+    let owner = if let Ok(handle) = window.window_handle() {
+        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+            win32.hwnd.get() as HWND
+        } else {
+            std::ptr::null_mut()
+        }
+    } else {
+        std::ptr::null_mut()
+    };
+
+    let mut ofn: OPENFILENAMEW = unsafe { std::mem::zeroed() };
+    ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = filter.as_ptr();
+    ofn.lpstrFile = buffer.as_mut_ptr();
+    ofn.nMaxFile = buffer.len() as u32;
+    ofn.lpstrTitle = title.as_ptr();
+    ofn.lpstrDefExt = extension.as_ptr();
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    let picked = unsafe { GetSaveFileNameW(&mut ofn) };
+    if picked == 0 {
+        let code = unsafe { CommDlgExtendedError() };
+        if code != 0 {
+            return Err(format!("The save dialog failed (error {code:#x})."));
+        }
+        return Ok(None);
+    }
+
+    let len = buffer.iter().position(|&ch| ch == 0).unwrap_or(0);
+    Ok(Some(PathBuf::from(String::from_utf16_lossy(
+        &buffer[..len],
+    ))))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn pick_save_path(_window: &Window, _default_name: &str) -> Result<Option<PathBuf>, String> {
+    Err("The native save dialog is not supported on this platform yet.".to_string())
+}
+
+
 fn resize_direction(name: &str) -> Option<ResizeDirection> {
     Some(match name {
         "n" => ResizeDirection::North,
@@ -352,6 +447,18 @@ fn dispatch(
                     .map_err(|err| err.to_string()),
             )
         }
+        "search_document" => {
+            let markdown = args
+                .get("markdown")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let query = args.get("query").and_then(Value::as_str).unwrap_or_default();
+            let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(5) as usize;
+            Some(
+                serde_json::to_value(search::search(markdown, query, limit))
+                    .map_err(|err| err.to_string()),
+            )
+        }
         "get_settings" => Some(
             serde_json::to_value(settings::load().view(&context.credentials))
                 .map_err(|err| err.to_string()),
@@ -399,6 +506,34 @@ fn dispatch(
             Ok(None) => Some(Ok(Value::Null)),
             Err(err) => Some(Err(err)),
         },
+        "save_document" => {
+            let content = args
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let requested = args
+                .get("path")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from);
+            let default_name = args
+                .get("defaultName")
+                .and_then(Value::as_str)
+                .unwrap_or("untitled.md");
+            let path = match requested {
+                Some(path) => path,
+                None => match pick_save_path(window, default_name) {
+                    Ok(Some(path)) => path,
+                    Ok(None) => return Some(Ok(Value::Null)),
+                    Err(err) => return Some(Err(err)),
+                },
+            };
+            Some(
+                write_document(&path, content)
+                    .and_then(|doc| serde_json::to_value(doc).map_err(|err| err.to_string())),
+            )
+        }
         "open_external" => {
             let url = args.get("url").and_then(Value::as_str).unwrap_or_default();
             Some(open_external(url).map(|_| Value::Null))
@@ -505,6 +640,23 @@ mod tests {
         assert!(!is_allowed_external_url("data:text/html,<script>"));
         assert!(!is_allowed_external_url("file:///etc/passwd"));
         assert!(!is_allowed_external_url("https://example.com/\r\nX: y"));
+    }
+
+    #[test]
+    fn writes_documents_and_reports_metadata() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "inkwell-save-{}-{stamp}.md",
+            std::process::id()
+        ));
+        let saved = write_document(&path, "# Hi\n\nSaved.").unwrap();
+        assert_eq!(saved.name, path.file_name().unwrap().to_string_lossy());
+        assert_eq!(saved.size, 12);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# Hi\n\nSaved.");
+        std::fs::remove_file(&path).ok();
     }
 }
 

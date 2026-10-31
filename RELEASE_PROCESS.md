@@ -48,11 +48,11 @@ If `ISCC.exe` is not on `PATH`, the pipeline also looks in
 4. Create and push an **annotated** tag:
 
 ```powershell
-git tag -a v0.1.0 -m "Inkwell v0.1.0"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "Inkwell v0.2.0"
+git push origin v0.2.0
 ```
 
-The pipeline checks that `Cargo.toml` says `0.1.0` and that the working tree is clean.
+The pipeline checks that `Cargo.toml` says `0.2.0` and that the working tree is clean.
 It never creates or moves a tag; `--verify-tag` prevents publishing against a missing tag.
 
 ## 4. Pipeline stages
@@ -71,34 +71,34 @@ It never creates or moves a tag; `--verify-tag` prevents publishing against a mi
 
 ```powershell
 # Full release (build, test, package, publish)
-python scripts\pipeline.py v0.1.0
+python scripts\pipeline.py v0.2.0
 
 # Draft release for review
-python scripts\pipeline.py v0.1.0 --draft
+python scripts\pipeline.py v0.2.0 --draft
 
 # Build and package locally only (no GitHub upload)
-python scripts\pipeline.py v0.1.0 --no-publish
+python scripts\pipeline.py v0.2.0 --no-publish
 
 # Portable zip only (temporary, no Inno Setup required)
-python scripts\pipeline.py v0.1.0 --no-publish --skip-installer
+python scripts\pipeline.py v0.2.0 --no-publish --skip-installer
 
 # Skip tests only when iterating on packaging (never for a real release)
-python scripts\pipeline.py v0.1.0 --no-publish --skip-tests --allow-dirty
+python scripts\pipeline.py v0.2.0 --no-publish --skip-tests --allow-dirty
 ```
 
 Equivalent `make` targets (when GNU Make is installed):
 
 ```powershell
-make draft TAG=v0.1.0
-make release TAG=v0.1.0
-make package TAG=v0.1.0
+make draft TAG=v0.2.0
+make release TAG=v0.2.0
+make package TAG=v0.2.0
 ```
 
 ## 6. Output layout
 
 ```text
-dist/v0.1.0/
-├── inkwell-v0.1.0-windows-x86_64/
+dist/v0.2.0/
+├── inkwell-v0.2.0-windows-x86_64/
 │   ├── inkwell.exe
 │   ├── WebView2Loader.dll
 │   ├── inkwell.ico
@@ -107,8 +107,8 @@ dist/v0.1.0/
 │   ├── LICENSE
 │   ├── THIRD_PARTY_NOTICES.md
 │   └── CHANGELOG.md
-├── inkwell-v0.1.0-windows-x86_64.zip
-├── Inkwell-Setup-0.1.0.exe
+├── inkwell-v0.2.0-windows-x86_64.zip
+├── Inkwell-Setup-0.2.0.exe
 ├── SHA256SUMS.txt
 ├── release_notes.md
 └── audit/
@@ -122,7 +122,7 @@ release body; the audit log stays local unless you choose to attach it.
 
 ```powershell
 $tmp = Join-Path $env:TEMP "inkwell-install-test"
-$setup = ".\dist\v0.1.0\Inkwell-Setup-0.1.0.exe"
+$setup = ".\dist\v0.2.0\Inkwell-Setup-0.2.0.exe"
 Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$tmp" -Wait
 Test-Path "$tmp\inkwell.exe"          # must be True
 Test-Path "$tmp\WebView2Loader.dll"   # must be True
@@ -142,7 +142,7 @@ The pipeline uses `gh release create --verify-tag`. If the release already exist
 notes and re-uploads assets with `--clobber`. To publish a draft after review:
 
 ```powershell
-gh release edit v0.1.0 --draft=false
+gh release edit v0.2.0 --draft=false
 ```
 
 Release assets:
@@ -164,9 +164,9 @@ as if it were trusted.
 ## 10. Rollback
 
 - Delete a bad release asset and re-upload a replacement:
-  `gh release upload v0.1.0 <asset> --clobber`
-- Mark a release as a draft while fixing it: `gh release edit v0.1.0 --draft`
-- Delete a release (and optionally its tag): `gh release delete v0.1.0 --yes [--cleanup-tag]`
+  `gh release upload v0.2.0 <asset> --clobber`
+- Mark a release as a draft while fixing it: `gh release edit v0.2.0 --draft`
+- Delete a release (and optionally its tag): `gh release delete v0.2.0 --yes [--cleanup-tag]`
 
 Never move a published tag; publish a new patch version instead.
 

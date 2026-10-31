@@ -4,7 +4,7 @@
 
 # Inkwell
 
-### *A sleek Markdown reader with a bring-your-own-key LLM copilot*
+### *A sleek Markdown editor & reader with a bring-your-own-key LLM copilot*
 
 **Local Rust rendering &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry**
 
@@ -13,7 +13,7 @@
 <!-- Tier 1: project meta -->
 <p align="center">
   <a href="https://github.com/LeTrollologist/Inkwell/releases/latest">
-    <img src="https://img.shields.io/badge/Release-v0.1.1_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
+    <img src="https://img.shields.io/badge/Release-v0.2.0_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
   </a>
   <a href="src/markdown.rs">
     <img src="https://img.shields.io/badge/Renderer-pulldown--cmark_%2B_Rust-22D3EE?style=for-the-badge&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Renderer" />
@@ -72,7 +72,7 @@
 
 ---
 
-A sleek desktop Markdown viewer in Rust with a built-in, bring-your-own-key LLM copilot.
+A sleek desktop Markdown editor and reader in Rust with a built-in, bring-your-own-key LLM copilot.
 
 Inkwell renders Markdown locally in Rust (`pulldown-cmark`), displays it in a frameless
 WebView2 window driven by `wry` + `tao`, and streams chat completions from the provider of
@@ -118,16 +118,19 @@ checksums and verification commands are published with every release.
 
 ## Highlights
 
-- **Fast, local rendering** — GFM tables, task lists, footnotes, strikethrough and code
-  fences, rendered by `pulldown-cmark` in Rust.
-- **Reading experience** — tuned typography, outline with scroll-spy, reading-progress bar,
-  source view, print/PDF export, dark & light themes, frameless window with native drag and
-  resize.
+- **Fast, local rendering** — GFM tables, task lists, footnotes, strikethrough, code fences and
+  KaTeX math, rendered by `pulldown-cmark` in Rust.
+- **Editor & reader** — edit Markdown in place, save or save-as, unsaved-change tracking,
+  outline with scroll-spy, reading progress, print/PDF, dark & light themes, frameless window
+  with native drag and resize.
 - **Any model, your key** — OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
   OpenRouter, xAI, Ollama, LM Studio, or any OpenAI-compatible endpoint.
 - **Real streaming** — SSE parsing in Rust, token-by-token markdown rendering, a separate
   collapsible *Reasoning* channel for reasoning models, and a Stop button that interrupts a
   stalled request instead of waiting for the next token.
+- **Search-aware assistant** — Search mode retrieves relevant document passages and cites their
+  headings; Edit mode proposes a complete revised document that you review before applying.
+  A thinking toggle requests extended reasoning from supported models.
 - **Document-aware** — attach the open document to every message, or quote a passage and
   ask about it. Local files open through a native picker or drag/drop, and relative images
   resolve from the document's own folder.
@@ -188,11 +191,11 @@ The executable lands at `target/release/inkwell.exe` and is self-contained (the 
 icon are embedded). To build the portable bundle and the per-user installer locally:
 
 ```powershell
-python scripts\pipeline.py v0.1.1 --no-publish
+python scripts\pipeline.py v0.2.0 --no-publish
 ```
 
-Outputs land in `dist\v0.1.1\`: `inkwell-v0.1.1-windows-x86_64.zip`,
-`Inkwell-Setup-0.1.1.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
+Outputs land in `dist\v0.2.0\`: `inkwell-v0.2.0-windows-x86_64.zip`,
+`Inkwell-Setup-0.2.0.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
 6.3+; see [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full release and publishing flow.
 
 ## Connect a model
@@ -256,6 +259,19 @@ immediately before a request; the webview only ever receives a `hasKey` boolean.
 Older builds stored keys as `apiKey` entries in `settings.json`. On first launch, Inkwell
 imports any such key into the OS credential store and rewrites the file without it.
 
+## Assistant modes
+
+Use the selector in the chat composer:
+
+- **Ask** — normal document Q&A with the full document attached when *Document* is on.
+- **Search doc** — retrieves the most relevant passages locally, sends them with the question,
+  and shows the cited headings as clickable **Sources** under the answer.
+- **Edit doc** — asks the model for a complete revised Markdown document. Review the proposed
+  edit and choose **Apply to editor**; nothing is written until you press `Ctrl+S`.
+- **Thinking** — enable *Request reasoning / extended thinking* in Settings to ask supported
+  OpenAI reasoning models, Anthropic extended thinking, Gemini thinking and OpenRouter
+  reasoning for a reasoning pass. Streamed reasoning appears in the collapsible channel.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -263,7 +279,9 @@ imports any such key into the OS credential store and rewrites the file without 
 | `Ctrl+O` | Open a Markdown file |
 | `Ctrl+J` | Toggle the assistant |
 | `Ctrl+B` | Toggle the sidebar |
-| `Ctrl+U` | Rendered ⇄ source |
+| `Ctrl+U` | Rendered ⇄ Markdown editor |
+| `Ctrl+S` | Save the current document |
+| `Ctrl+Shift+S` | Save as… |
 | `Ctrl+,` | Assistant settings |
 | `Ctrl+P` | Print / save as PDF |
 | `Enter` | Send (Shift+Enter for a newline) |
@@ -316,7 +334,8 @@ inkwell/
 │   ├── main.rs        tao event loop, frameless window, embedded webview, file drop
 │   ├── app.rs         IPC dispatch, native file picker, async bridge, asset protocol
 │   ├── llm.rs         cancellable OpenAI / Anthropic / Gemini SSE streaming
-│   ├── markdown.rs    renderer, outline/anchors, HTML escaping, URL/image sanitising
+│   ├── markdown.rs    renderer, outline/anchors, HTML escaping, URL/image sanitising, math
+│   ├── search.rs      local document retrieval for Search mode
 │   ├── credentials.rs OS credential store + session-only fallback
 │   ├── settings.rs    non-secret settings, provider presets, legacy-key migration
 │   └── assets.rs      include_bytes! asset map served to the webview
@@ -325,7 +344,7 @@ inkwell/
 │   ├── styles.css     design system, reading typography, print styles
 │   ├── app.js         state, document UX, chat streaming
 │   ├── bridge.js      invoke/listen over wry's postMessage IPC
-│   └── vendor/        highlight.js + theme (bundled for offline use)
+│   └── vendor/        highlight.js, KaTeX + fonts (bundled for offline use)
 ├── assets/icons/      source PNG/ICO icons
 ├── assets/runtime/    Microsoft WebView2Loader.dll bundled with releases
 ├── docs/              demo document + screenshot
@@ -360,26 +379,29 @@ scripts\test.ps1         # or: cargo test
 node scripts\check-ui.js # duplicate functions / missing ids / markup balance
 ```
 
-The suite has **47 tests**. It covers anchor-id generation and deduplication, front-matter
+The suite has **59 tests**. It covers anchor-id generation and deduplication, front-matter
 extraction, escaping of raw HTML and LLM-style injection payloads, URL-scheme sanitisation,
-malformed documents, GFM tables/task lists, relative-image containment and embedding, SSE
-parsing for all three transports, request construction, cancellation/interrupted streams/
-rate-limit and 5xx handling against a local mock server, credential lookup/migration and key
-masking.
+malformed documents, GFM tables/task lists, KaTeX math wrappers, relative-image containment
+and embedding, local search retrieval and citations, SSE parsing for all three transports,
+request construction (including reasoning/thinking options), cancellation/interrupted streams/
+rate-limit and 5xx handling against a local mock server, document saving, credential
+lookup/migration and key masking.
 
 The release pipeline runs these checks before packaging and aborts on failure; see
 [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
 
 ## Notes & limitations
 
-- Inkwell is a **viewer**: it renders Markdown but does not edit or save files.
+- Inkwell is an **editor and reader**: Markdown can be edited in the source pane and saved with
+  `Ctrl+S`; AI edits are only applied after you review and confirm them.
 - Relative images are embedded as data URLs and must live inside the document's folder.
   Documents opened through the browser file-input fallback (non-Windows, or the hidden input)
   have no filesystem path, so their relative images stay unresolved.
 - Embedded images are capped at 8 MB each and 24 MB per render; remote images must use `https:`.
-- LaTeX is shown as written (no math renderer yet).
-- The installer and shortcuts use `assets/icons/icon.ico`; the PE file icon itself is still not
-  embedded, so Explorer may show the generic executable icon for `inkwell.exe`.
+- Math is rendered locally with bundled KaTeX (`$…$` and `$$…$$`); unsupported TeX syntax is
+  shown as an error rather than executed.
+- The application icon and version metadata are embedded in the PE, so Explorer and shortcuts
+  show the Inkwell icon.
 - Release builds are unsigned, so Windows SmartScreen may warn on first launch. SHA-256
   checksums and verification commands are published with every release; see
   [INSTALL.md](INSTALL.md).

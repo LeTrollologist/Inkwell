@@ -10,6 +10,7 @@
     />
     <title>Inkwell</title>
     <link rel="stylesheet" href="vendor/hljs-dark.css" />
+    <link rel="stylesheet" href="vendor/katex/katex.min.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -32,7 +33,10 @@
 
         <div class="titlebar-actions">
           <button class="icon-btn" id="railBtn" title="Toggle sidebar (Ctrl+B)" aria-label="Toggle sidebar"></button>
-          <button class="icon-btn" id="sourceBtn" title="Toggle source view (Ctrl+U)" aria-label="Toggle source view"></button>
+          <button class="icon-btn" id="saveBtn" title="Save (Ctrl+S)" aria-label="Save document" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>
+          </button>
+          <button class="icon-btn" id="sourceBtn" title="Edit Markdown source (Ctrl+U)" aria-label="Edit source"></button>
           <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"></button>
           <button class="icon-btn" id="settingsBtn" title="Settings (Ctrl+,)" aria-label="Settings"></button>
           <button class="pill-btn" id="chatToggle" title="Toggle assistant (Ctrl+J)">
@@ -119,7 +123,17 @@
           </section>
 
           <article class="markdown" id="doc" hidden></article>
-          <pre class="source" id="source" hidden></pre>
+          <div class="editor-shell" id="editorShell" hidden>
+            <div class="editor-bar">
+              <span class="editor-state" id="editorState">Saved</span>
+              <span class="editor-hint">Ctrl+S to save · Ctrl+U for preview</span>
+              <div class="spacer"></div>
+              <button class="ghost-btn tiny" id="saveAsBtn">Save as…</button>
+              <button class="ghost-btn tiny" id="previewBtn">Preview</button>
+              <button class="primary-btn tiny" id="saveEditorBtn">Save</button>
+            </div>
+            <textarea class="source-editor" id="source" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
 
           <div class="drop-overlay" id="dropOverlay" hidden>
             <div class="drop-inner">
@@ -175,6 +189,13 @@
             </div>
             <textarea id="prompt" rows="1" placeholder="Ask about the document…"></textarea>
             <div class="composer-row">
+              <label class="mode-wrap" title="Assistant mode">
+                <select id="chatMode" class="mode-select">
+                  <option value="ask">Ask</option>
+                  <option value="search">Search doc</option>
+                  <option value="edit">Edit doc</option>
+                </select>
+              </label>
               <button class="ghost-btn tiny" id="contextToggle" aria-pressed="true">
                 <span class="ctx-dot"></span> Document
               </button>
@@ -283,6 +304,15 @@
             <span>Attach the current document to every message</span>
           </label>
 
+          <label class="check">
+            <input type="checkbox" id="thinkingInput" />
+            <span>Request reasoning / extended thinking when supported</span>
+          </label>
+          <small class="field-hint">
+            Applies to OpenAI reasoning models, Anthropic extended thinking, Gemini thinking and
+            OpenRouter reasoning. Other providers may ignore it.
+          </small>
+
           <p class="storage-note" id="storageNote"></p>
         </div>
 
@@ -322,6 +352,7 @@
 
     <script src="bridge.js"></script>
     <script src="vendor/highlight.min.js"></script>
+    <script src="vendor/katex/katex.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

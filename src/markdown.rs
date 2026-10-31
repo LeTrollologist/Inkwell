@@ -119,6 +119,7 @@ fn options() -> Options {
     opts.insert(Options::ENABLE_TASKLISTS);
     opts.insert(Options::ENABLE_FOOTNOTES);
     opts.insert(Options::ENABLE_SMART_PUNCTUATION);
+    opts.insert(Options::ENABLE_MATH);
     opts
 }
 
@@ -341,6 +342,18 @@ pub fn render_with(source: &str, base_dir: Option<&Path>) -> Rendered {
                     title,
                     id,
                 }));
+            }
+            // Math is wrapped in trusted elements; the TeX itself is emitted as
+            // text so it is HTML-escaped and KaTeX can read it back safely.
+            Event::InlineMath(tex) => {
+                events.push(Event::Html("<span class=\"math-inline\">".into()));
+                events.push(Event::Text(tex));
+                events.push(Event::Html("</span>".into()));
+            }
+            Event::DisplayMath(tex) => {
+                events.push(Event::Html("<span class=\"math-display\">".into()));
+                events.push(Event::Text(tex));
+                events.push(Event::Html("</span>".into()));
             }
             Event::Start(Tag::Heading {
                 level, classes, attrs, ..
@@ -642,6 +655,23 @@ mod tests {
         );
         assert!(!rendered.html.contains("<img"));
         assert!(!rendered.html.contains("&lt;script"));
+    }
+
+
+    #[test]
+    fn inline_and_display_math_are_wrapped() {
+        let rendered = render("Euler: $e^{i\\pi}+1=0$\n\n$$\n\\int_0^1 x^2\\,dx\n$$");
+        assert!(rendered.html.contains("<span class=\"math-inline\">"));
+        assert!(rendered.html.contains("e^{i\\pi}+1=0"));
+        assert!(rendered.html.contains("<span class=\"math-display\">"));
+        assert!(rendered.html.contains("\\int_0^1"));
+    }
+
+    #[test]
+    fn math_tex_is_html_escaped() {
+        let rendered = render("$<script>alert(1)</script>$");
+        assert!(!rendered.html.contains("<script"));
+        assert!(rendered.html.contains("&lt;script&gt;"));
     }
 
 }
