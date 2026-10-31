@@ -6,14 +6,14 @@
 
 ### *A sleek Markdown editor & reader with a bring-your-own-key LLM copilot*
 
-**Local Rust rendering &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry &bull; Free**
+**Local Rust rendering &bull; Optional web search &bull; Any provider, your key &bull; Token-by-token streams &bull; No telemetry &bull; Free**
 
 <br />
 
 <!-- Tier 1: project meta -->
 <p align="center">
   <a href="https://github.com/LeTrollologist/Inkwell/releases/latest">
-    <img src="https://img.shields.io/badge/Release-v0.2.0_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
+    <img src="https://img.shields.io/badge/Release-v0.3.0_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
   </a>
   <a href="src/markdown.rs">
     <img src="https://img.shields.io/badge/Renderer-pulldown--cmark_%2B_Rust-22D3EE?style=for-the-badge&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Renderer" />
@@ -74,8 +74,8 @@ A sleek desktop Markdown editor and reader in Rust with a built-in, bring-your-o
 
 Inkwell renders Markdown locally in Rust (`pulldown-cmark`), displays it in a frameless
 WebView2 window driven by `wry` + `tao`, and streams chat completions from the provider of
-your choice. No account, no proxy, no telemetry. Requests go from your machine straight to
-the provider.
+your choice. Optional web search uses your own search-provider key; queries go directly from
+your machine to that provider. No account, no proxy, no telemetry.
 
 ![Inkwell reading a Markdown document with the assistant open](docs/screenshot.png)
 
@@ -126,9 +126,10 @@ checksums and verification commands are published with every release.
 - **Real streaming** - SSE parsing in Rust, token-by-token markdown rendering, a separate
   collapsible *Reasoning* channel for reasoning models, and a Stop button that interrupts a
   stalled request instead of waiting for the next token.
-- **Search-aware assistant** - Search mode retrieves relevant document passages and cites their
-  headings; Edit mode proposes a complete revised document that you review before applying.
-  A thinking toggle requests extended reasoning from supported models.
+- **Fetch-aware assistant** - Fetch mode retrieves relevant document passages and cites their
+  headings; Web search can use your own search key for current sources; Edit mode proposes a
+  complete revised document that you review before applying. A thinking toggle requests extended
+  reasoning from supported models.
 - **Document-aware** - attach the open document to every message, or quote a passage and
   ask about it. Local files open through a native picker or drag/drop, and relative images
   resolve from the document's own folder.
@@ -189,11 +190,11 @@ The executable lands at `target/release/inkwell.exe` and is self-contained (the 
 icon are embedded). To build the portable bundle and the per-user installer locally:
 
 ```powershell
-python scripts\pipeline.py v0.2.0 --no-publish
+python scripts\pipeline.py v0.3.0 --no-publish
 ```
 
-Outputs land in `dist\v0.2.0\`: `inkwell-v0.2.0-windows-x86_64.zip`,
-`Inkwell-Setup-0.2.0.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
+Outputs land in `dist\v0.3.0\`: `inkwell-v0.3.0-windows-x86_64.zip`,
+`Inkwell-Setup-0.3.0.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
 6.3+; see [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full release and publishing flow.
 
 ## Connect a model
@@ -225,6 +226,24 @@ anything else that speaks `/chat/completions` with SSE.
 Preset model names are starting points and providers rename models often. Use **Fetch list**
 to see what your key can actually reach, then pick from the datalist.
 
+### Web search (optional)
+
+Open **Settings → Web search** to enable AI-initiated search. It is off by default and needs
+its own bring-your-own-key provider:
+
+| Provider | Authentication | Default endpoint |
+| --- | --- | --- |
+| Tavily | Bearer API key | `https://api.tavily.com/search` |
+| Brave Search | `X-Subscription-Token` | `https://api.search.brave.com/res/v1/web/search` |
+| Serper | `X-API-KEY` | `https://google.serper.dev/search` |
+| Exa | `x-api-key` | `https://api.exa.ai/search` |
+| SearXNG | optional bearer token | `http://localhost:8080/search` |
+
+SearXNG must have JSON output enabled. Keys use the OS credential store under a separate
+`search:<provider>` namespace. The model chooses whether to call the search tool; queries and
+retrieved excerpts are sent only to the search provider and your selected model provider.
+Search results are treated as untrusted reference text and are never executed as instructions.
+
 ### Try it without a key
 
 A mock OpenAI-compatible server ships with the repo so the UI can be exercised offline:
@@ -255,15 +274,27 @@ session only. It never falls back to writing keys to disk. Keys are read by the 
 immediately before a request; the webview only ever receives a `hasKey` boolean.
 
 Older builds stored keys as `apiKey` entries in `settings.json`. On first launch, Inkwell
-imports any such key into the OS credential store and rewrites the file without it.
+imports any such key into the OS credential store and rewrites the file without it. Web-search
+keys use a separate `search:<provider>` credential namespace, so a search key can never collide
+with a chat provider key.
+
+Web search is off until you configure it. When enabled, the model's search queries and the
+resulting pages' excerpts are sent to the search provider you choose, then included in the chat
+request to your model provider. Inkwell has no proxy or telemetry; there is no additional
+service in the loop.
 
 ## Assistant modes
 
 Use the selector in the chat composer:
 
 - **Ask** — normal document Q&A with the full document attached when *Document* is on.
-- **Search doc** — retrieves the most relevant passages locally, sends them with the question,
+- **Fetch doc** — retrieves the most relevant passages locally, sends them with the question,
   and shows the cited headings as clickable **Sources** under the answer.
+- **Web search** — the model can call a web-search tool when it needs current information.
+  Configure a search provider and key under *Settings → Web search*; search is off by default.
+  Retrieved excerpts are shown in the chat with clickable source links and numbered citations.
+  Treat web content as untrusted reference material; Inkwell never executes instructions found
+  in search results.
 - **Edit doc** — asks the model for a complete revised Markdown document. Review the proposed
   edit and choose **Apply to editor**; nothing is written until you press `Ctrl+S`.
 - **Thinking** — enable *Request reasoning / extended thinking* in Settings to ask supported
@@ -333,7 +364,8 @@ inkwell/
 │   ├── app.rs         IPC dispatch, native file picker, async bridge, asset protocol
 │   ├── llm.rs         cancellable OpenAI / Anthropic / Gemini SSE streaming
 │   ├── markdown.rs    renderer, outline/anchors, HTML escaping, URL/image sanitising, math
-│   ├── search.rs      local document retrieval for Search mode
+│   ├── fetch.rs       local document retrieval for Fetch mode
+│   ├── search.rs      optional web search providers (Tavily, Brave, Serper, Exa, SearXNG)
 │   ├── credentials.rs OS credential store + session-only fallback
 │   ├── settings.rs    non-secret settings, provider presets, legacy-key migration
 │   └── assets.rs      include_bytes! asset map served to the webview
@@ -361,8 +393,9 @@ Frontend → Rust commands (JSON over `window.ipc.postMessage`):
 | `render_markdown` | Markdown → HTML + outline + word count |
 | `get_settings` / `save_settings` | Masked settings view / merge + persist |
 | `list_models` | Provider model discovery |
-| `chat` | Spawn a streaming completion (`llm:delta/done/error` events) |
-| `cancel_chat` | Cooperative cancellation for one stream |
+| `chat` | Spawn a streaming completion (`llm:delta/done/error` events; Web mode also emits `search:*` activity) |
+| `fetch_document` | Local heading-aware document retrieval |
+| `cancel_chat` | Cooperative cancellation for one stream, including in-progress web searches |
 | `open_external` | Open a link in the system browser |
 | `initial_document` | File passed on the command line |
 | `app_info` | Version and settings path |
@@ -377,13 +410,14 @@ scripts\test.ps1         # or: cargo test
 node scripts\check-ui.js # duplicate functions / missing ids / markup balance
 ```
 
-The suite has **59 tests**. It covers anchor-id generation and deduplication, front-matter
+The suite has **72 tests**. It covers anchor-id generation and deduplication, front-matter
 extraction, escaping of raw HTML and LLM-style injection payloads, URL-scheme sanitisation,
 malformed documents, GFM tables/task lists, KaTeX math wrappers, relative-image containment
-and embedding, local search retrieval and citations, SSE parsing for all three transports,
-request construction (including reasoning/thinking options), cancellation/interrupted streams/
-rate-limit and 5xx handling against a local mock server, document saving, credential
-lookup/migration and key masking.
+and embedding, local fetch retrieval and citations, web-search request construction and
+provider response parsing, external-content sanitisation, rate-limit handling, SSE parsing for
+all three transports, request construction (including reasoning/thinking options), tool-call
+planning and JSON fallback, cancellation/interrupted streams/rate-limit and 5xx handling
+against a local mock server, document saving, credential lookup/migration and key masking.
 
 The release pipeline runs these checks before packaging and aborts on failure; see
 [RELEASE_PROCESS.md](RELEASE_PROCESS.md).

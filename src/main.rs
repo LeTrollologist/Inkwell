@@ -3,6 +3,7 @@
 mod app;
 mod assets;
 mod credentials;
+mod fetch;
 mod llm;
 mod markdown;
 mod search;

@@ -460,9 +460,9 @@ def write_release_notes(tag, version, tag_dir, assets, hashes):
 
     body = f"""## Inkwell {tag}
 
-A calm, local-first Markdown editor and reader with a bring-your-own-key LLM copilot. No
-account, no proxy, no telemetry — documents render locally and model requests go straight to
-the provider you configure.
+A calm, local-first Markdown editor and reader with optional web search and a
+bring-your-own-key LLM copilot. No account, no proxy, no telemetry — documents render locally,
+and model and search requests go straight to the providers you configure.
 
 ### What's new
 

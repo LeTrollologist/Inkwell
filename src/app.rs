@@ -15,6 +15,7 @@ use wry::http::{Request, Response};
 
 use crate::assets;
 use crate::credentials::Credentials;
+use crate::fetch;
 use crate::llm::{self, ChatRequest};
 use crate::markdown;
 use crate::search;
@@ -174,8 +175,8 @@ pub fn initial_path_from_args() -> Option<PathBuf> {
 }
 
 pub(crate) fn read_document(path: &Path) -> Result<OpenedDocument, String> {
-    let metadata = std::fs::metadata(path)
-        .map_err(|err| format!("Cannot read {}: {err}", path.display()))?;
+    let metadata =
+        std::fs::metadata(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))?;
     if metadata.len() > 16 * 1024 * 1024 {
         return Err("That file is larger than 16 MB.".into());
     }
@@ -364,7 +365,6 @@ fn pick_save_path(_window: &Window, _default_name: &str) -> Result<Option<PathBu
     Err("The native save dialog is not supported on this platform yet.".to_string())
 }
 
-
 fn resize_direction(name: &str) -> Option<ResizeDirection> {
     Some(match name {
         "n" => ResizeDirection::North,
@@ -378,7 +378,6 @@ fn resize_direction(name: &str) -> Option<ResizeDirection> {
         _ => return None,
     })
 }
-
 
 pub fn handle_ipc(body: &str, window: &Window, context: &Arc<AppContext>, emitter: &Emitter) {
     let request: IpcRequest = match serde_json::from_str(body) {
@@ -447,15 +446,18 @@ fn dispatch(
                     .map_err(|err| err.to_string()),
             )
         }
-        "search_document" => {
+        "fetch_document" | "search_document" => {
             let markdown = args
                 .get("markdown")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let query = args.get("query").and_then(Value::as_str).unwrap_or_default();
+            let query = args
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(5) as usize;
             Some(
-                serde_json::to_value(search::search(markdown, query, limit))
+                serde_json::to_value(fetch::fetch(markdown, query, limit))
                     .map_err(|err| err.to_string()),
             )
         }
@@ -591,6 +593,14 @@ fn dispatch(
                 Ok(provider) => provider,
                 Err(err) => return Some(Err(err)),
             };
+            let search_resolved = if chat_request.web_search {
+                match search::resolve(&settings, &context.credentials) {
+                    Ok(resolved) => Some(resolved),
+                    Err(err) => return Some(Err(err)),
+                }
+            } else {
+                None
+            };
 
             let cancel = Arc::new(AtomicBool::new(false));
             let id = chat_request.id.clone();
@@ -603,7 +613,15 @@ fn dispatch(
             let context = Arc::clone(context);
             let handle = context.runtime.handle().clone();
             handle.spawn(async move {
-                llm::stream_chat(emitter, client, provider, chat_request, cancel).await;
+                llm::stream_chat_with_search(
+                    emitter,
+                    client,
+                    provider,
+                    chat_request,
+                    search_resolved,
+                    cancel,
+                )
+                .await;
                 if let Ok(mut chats) = context.chats.lock() {
                     chats.remove(&id);
                 }
@@ -613,8 +631,6 @@ fn dispatch(
         other => Some(Err(format!("Unknown command: {other}"))),
     }
 }
-
-
 
 /// `settings.json` never carries secrets, so always resolve the key from the
 /// OS credential store right before building a provider request.
@@ -648,10 +664,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "inkwell-save-{}-{stamp}.md",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("inkwell-save-{}-{stamp}.md", std::process::id()));
         let saved = write_document(&path, "# Hi\n\nSaved.").unwrap();
         assert_eq!(saved.name, path.file_name().unwrap().to_string_lossy());
         assert_eq!(saved.size, 12);
@@ -659,4 +673,3 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 }
-

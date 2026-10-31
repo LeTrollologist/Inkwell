@@ -3,6 +3,32 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.3.0] - 2026-10-31
+
+### Added
+
+- **Agentic web search** — an optional Web search assistant mode. The model can call a
+  `web_search` tool when it needs current information, then answer with the retrieved excerpts
+  and numbered source links. Supports Tavily, Brave Search, Serper, Exa and self-hosted SearXNG
+  with bring-your-own-key settings.
+- Web search is disabled by default and configured under *Settings → Web search*. Search keys
+  are stored in the OS credential store under a separate namespace and never reach the webview.
+- Search activity and results stream into the chat; source links open in the system browser.
+- Search requests have hard timeouts, cancellation through the existing Stop button, typed
+  authentication/rate-limit/timeout errors, and URL/HTML sanitisation. External excerpts are
+  explicitly marked as untrusted context in the model prompt.
+- Native web-search tool-call planning for OpenAI-compatible, Anthropic and Gemini transports,
+  with a JSON planning fallback for models that do not support tools.
+
+### Changed
+
+- Renamed the existing local **Search doc** mode to **Fetch doc**. The underlying
+  heading-aware document retrieval is unchanged; the IPC command is now `fetch_document`
+  (`search_document` remains as a compatibility alias).
+- Chat composer modes are now Ask / Fetch doc / Web search / Edit doc. The remembered mode
+  migrates from the old `search` value automatically.
+- Select controls now follow the active dark or light theme, including their dropdown options.
+
 ## [0.2.0] - 2026-10-28
 
 ### Added

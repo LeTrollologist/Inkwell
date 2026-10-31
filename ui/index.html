@@ -192,7 +192,8 @@
               <label class="mode-wrap" title="Assistant mode">
                 <select id="chatMode" class="mode-select">
                   <option value="ask">Ask</option>
-                  <option value="search">Search doc</option>
+                  <option value="fetch">Fetch doc</option>
+                  <option value="web">Web search</option>
                   <option value="edit">Edit doc</option>
                 </select>
               </label>
@@ -312,6 +313,63 @@
             Applies to OpenAI reasoning models, Anthropic extended thinking, Gemini thinking and
             OpenRouter reasoning. Other providers may ignore it.
           </small>
+
+          <div class="settings-section">
+            <div class="settings-section-head">
+              <span class="field-label">Web search</span>
+              <span class="section-badge">Optional</span>
+            </div>
+            <label class="check">
+              <input type="checkbox" id="webSearchEnabled" />
+              <span>Let the assistant search the web when it needs current information</span>
+            </label>
+            <small class="field-hint">
+              Off by default. Search uses your own provider key, sent only from the Rust core.
+              Results are untrusted excerpts and are cited in the answer.
+            </small>
+
+            <div class="web-search-fields" id="webSearchFields">
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field-label">Search provider</span>
+                  <select id="searchProviderSelect"></select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Results per query</span>
+                  <input id="searchMaxResults" type="number" min="1" max="10" step="1" value="5" />
+                </label>
+              </div>
+
+              <label class="field">
+                <span class="field-label">Search API key</span>
+                <div class="input-row">
+                  <input
+                    id="searchKeyInput"
+                    type="password"
+                    placeholder="tvly-…"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <button class="ghost-btn" id="clearSearchKeyBtn" hidden>Remove</button>
+                </div>
+                <small class="field-hint" id="searchKeyHint">
+                  Stored in the system credential store, separately from chat keys.
+                </small>
+              </label>
+
+              <label class="field">
+                <span class="field-label">Search endpoint</span>
+                <input
+                  id="searchEndpointInput"
+                  spellcheck="false"
+                  placeholder="https://api.tavily.com/search"
+                />
+                <small class="field-hint" id="searchEndpointHint">
+                  Works with Tavily, Brave, Serper, Exa and self-hosted SearXNG.
+                </small>
+              </label>
+            </div>
+          </div>
 
           <p class="storage-note" id="storageNote"></p>
         </div>

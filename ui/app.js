@@ -44,7 +44,11 @@ const state = {
   renderTimer: 0,
   sessionTimer: 0,
   activeHeading: "",
+  searchPendingKeys: new Map(),
+  searchClearedKeys: new Set(),
 };
+
+if (state.chatMode === "search") state.chatMode = "fetch";
 
 const isLocalEndpoint = (url = "") =>
   /(^|\/\/)(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)/i.test(url);
@@ -54,6 +58,22 @@ const activeProvider = () =>
 
 const providerReady = (provider) =>
   !!provider && !!provider.model && (provider.hasKey || isLocalEndpoint(provider.baseUrl));
+
+const activeSearchProvider = () => {
+  const web = state.settings?.webSearch;
+  if (!web) return null;
+  return web.providers.find((provider) => provider.id === web.activeProvider) || null;
+};
+
+const searchProviderNeedsKey = (provider) =>
+  !!provider && provider.kind !== "searxng" && !isLocalEndpoint(provider.endpoint);
+
+const webSearchReady = () => {
+  const web = state.settings?.webSearch;
+  const provider = activeSearchProvider();
+  if (!web?.enabled || !provider || !provider.endpoint) return false;
+  return provider.hasKey || !searchProviderNeedsKey(provider);
+};
 
 /* ---------------------------------------------------------------- utilities */
 
@@ -119,6 +139,7 @@ async function loadSettings() {
     state.settings = null;
   }
   syncProviderUI();
+  if (typeof updateChatModeUI === "function") updateChatModeUI();
   syncCredentialStatus();
   if (state.settings) {
     $("contextToggle").setAttribute("aria-pressed", String(!!state.settings.includeDocument));
@@ -736,6 +757,9 @@ async function renderThread() {
         if (Array.isArray(message.sources) && message.sources.length) {
           renderSources(node.root, message.sources);
         }
+        if (Array.isArray(message.webSources) && message.webSources.length) {
+          renderWebSources(node.root, message.webSources);
+        }
       } catch {
         node.body.textContent = message.content;
       }
@@ -765,6 +789,8 @@ function restoreThread() {
         content: typeof message.content === "string" ? message.content : "",
         reasoning: typeof message.reasoning === "string" ? message.reasoning : "",
         sources: Array.isArray(message.sources) ? message.sources : [],
+        webSources: Array.isArray(message.webSources) ? message.webSources : [],
+        searchQueries: Array.isArray(message.searchQueries) ? message.searchQueries : [],
       }));
   } catch {
     state.thread = [];
@@ -775,7 +801,7 @@ function setStreamingUI(active) {
   $("sendBtn").hidden = active;
   $("stopBtn").hidden = !active;
   $("sendBtn").disabled = active;
-  statState(active ? "Streaming…" : "Ready");
+  statState(active ? "Thinking..." : "Ready");
 }
 
 function cleanupStreamTimer() {
@@ -820,8 +846,18 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
     stream.body.textContent = stream.content;
   }
 
-  if (stream.searchHits?.length) {
-    renderSources(stream.root, stream.searchHits);
+  if (stream.fetchHits?.length) {
+    renderSources(stream.root, stream.fetchHits);
+  }
+  if (stream.webHits?.length) {
+    renderWebSources(stream.root, stream.webHits);
+  }
+  if (stream.searchCard?.spinner && !stream.searchCard.spinner.hidden) {
+    finishSearchCard(
+      stream,
+      reason === "cancelled" ? "cancelled" : "failed",
+      stream.webHits.length
+    );
   }
   if (stream.mode === "edit" && !error && reason !== "cancelled") {
     const proposed = extractMarkdownBlock(stream.content);
@@ -844,7 +880,9 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
       role: "assistant",
       content: stream.content,
       reasoning: stream.reasoning,
-      sources: stream.searchHits || [],
+      sources: stream.fetchHits || [],
+      webSources: stream.webHits || [],
+      searchQueries: stream.searchQueries || [],
     });
     saveThread();
   }
@@ -856,13 +894,15 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
 }
 
 function updateChatModeUI() {
-  if (!["ask", "search", "edit"].includes(state.chatMode)) state.chatMode = "ask";
+  if (state.chatMode === "search") state.chatMode = "fetch";
+  if (!["ask", "fetch", "web", "edit"].includes(state.chatMode)) state.chatMode = "ask";
   const mode = state.chatMode;
   const select = $("chatMode");
   if (select && select.value !== mode) select.value = mode;
   const placeholders = {
     ask: "Ask about the document…",
-    search: "Search the document for…",
+    fetch: "Fetch passages from the document for…",
+    web: "Ask something that needs current sources…",
     edit: "Describe the edit you want…",
   };
   $("prompt").placeholder = placeholders[mode] || placeholders.ask;
@@ -870,8 +910,14 @@ function updateChatModeUI() {
   $("contextToggle").disabled = editing;
   $("contextToggle").title = editing
     ? "Edit mode always sends the full document."
-    : "Include the document in the request";
+    : mode === "web"
+      ? "Include the document in the request alongside web results"
+      : "Include the document in the request";
   if (editing) $("contextToggle").setAttribute("aria-pressed", "true");
+  const webOption = select?.querySelector('option[value="web"]');
+  if (webOption) {
+    webOption.textContent = webSearchReady() ? "Web search" : "Web search (set up)";
+  }
 }
 
 function renderSources(root, hits) {
@@ -905,6 +951,135 @@ function renderSources(root, hits) {
     box.appendChild(button);
   });
 }
+
+function ensureSearchCard(stream) {
+  if (stream.searchCard) return stream.searchCard;
+  const card = document.createElement("div");
+  card.className = "search-activity searching";
+  const head = document.createElement("div");
+  head.className = "search-activity-head";
+  const spinner = document.createElement("span");
+  spinner.className = "search-spinner";
+  const title = document.createElement("strong");
+  title.textContent = "Searching the web…";
+  const count = document.createElement("span");
+  count.className = "search-count";
+  head.append(spinner, title, count);
+
+  const queries = document.createElement("div");
+  queries.className = "search-queries";
+  const results = document.createElement("div");
+  results.className = "web-results";
+  const error = document.createElement("div");
+  error.className = "search-failure";
+  error.hidden = true;
+
+  card.append(head, queries, results, error);
+  const meta = stream.root.querySelector(".msg-meta");
+  if (meta) stream.root.insertBefore(card, meta);
+  else stream.root.appendChild(card);
+  stream.searchCard = { card, spinner, title, count, queries, results, error };
+  return stream.searchCard;
+}
+
+function addSearchResults(stream, hits) {
+  if (!Array.isArray(hits) || !hits.length) return;
+  const ui = ensureSearchCard(stream);
+  hits.forEach((hit) => {
+    if (!hit?.url || stream.webHits.some((known) => known.url === hit.url)) return;
+    stream.webHits.push(hit);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "web-result";
+    const name = document.createElement("span");
+    name.className = "web-result-title";
+    name.textContent = hit.title || "Untitled result";
+    const snippet = document.createElement("span");
+    snippet.className = "web-result-snippet";
+    snippet.textContent = hit.snippet || "";
+    const metaRow = document.createElement("span");
+    metaRow.className = "web-result-meta";
+    let host = hit.url;
+    try {
+      host = new URL(hit.url).hostname.replace(/^www\./, "");
+    } catch {
+      /* keep the full URL */
+    }
+    metaRow.textContent = `${host}${hit.provider ? ` · ${hit.provider}` : ""}`;
+    button.append(name, snippet, metaRow);
+    button.title = hit.url;
+    button.addEventListener("click", () => {
+      invoke("open_external", { url: hit.url }).catch((err) => toast(String(err), "error"));
+    });
+    ui.results.appendChild(button);
+  });
+  ui.count.textContent = `${stream.webHits.length} source${stream.webHits.length === 1 ? "" : "s"}`;
+}
+
+function setSearchFailure(stream, message) {
+  const ui = ensureSearchCard(stream);
+  ui.error.hidden = false;
+  ui.error.textContent = message;
+  ui.card.classList.add("has-error");
+}
+
+function finishSearchCard(stream, status, hits) {
+  const ui = ensureSearchCard(stream);
+  ui.spinner.hidden = true;
+  ui.card.classList.remove("searching");
+  if (status === "ok" || status === "partial") {
+    ui.title.textContent = status === "partial" ? "Web search completed with errors" : "Web search complete";
+  } else if (status === "empty") {
+    ui.title.textContent = "Web search returned no results";
+  } else if (status === "failed") {
+    ui.title.textContent = "Web search failed";
+    ui.card.classList.add("has-error");
+  } else if (status === "cancelled") {
+    ui.title.textContent = "Web search stopped";
+  } else {
+    ui.title.textContent = "No web search needed";
+  }
+  ui.count.textContent = hits ? `${hits} source${hits === 1 ? "" : "s"}` : "";
+}
+
+function renderWebSources(root, hits) {
+  if (!root || !Array.isArray(hits) || !hits.length) return;
+  let box = root.querySelector(".chat-sources.web");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "chat-sources web";
+    const title = document.createElement("div");
+    title.className = "sources-title";
+    title.textContent = "Web sources";
+    box.appendChild(title);
+    const meta = root.querySelector(".msg-meta");
+    if (meta) root.insertBefore(box, meta);
+    else root.appendChild(box);
+  }
+  box.querySelectorAll(".source-chip").forEach((chip) => chip.remove());
+  hits.forEach((hit, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "source-chip";
+    button.title = hit.snippet || hit.url || "";
+    const label = document.createElement("span");
+    label.className = "source-name";
+    label.textContent = `${index + 1}. ${hit.title || "Untitled result"}`;
+    const host = document.createElement("span");
+    host.className = "source-line";
+    try {
+      host.textContent = new URL(hit.url).hostname.replace(/^www\./, "");
+    } catch {
+      host.textContent = hit.url || "";
+    }
+    button.append(label, host);
+    button.addEventListener("click", () => {
+      invoke("open_external", { url: hit.url }).catch((err) => toast(String(err), "error"));
+    });
+    box.appendChild(button);
+  });
+}
+
 
 async function scrollToHeadingText(text) {
   if (!state.doc) return;
@@ -1002,26 +1177,31 @@ async function sendMessage(override) {
   }
 
   const mode = state.chatMode;
-  if ((mode === "search" || mode === "edit") && !state.doc) {
-    toast("Open a document before using Search or Edit mode.", "error");
+  if ((mode === "fetch" || mode === "edit") && !state.doc) {
+    toast("Open a document before using Fetch or Edit mode.", "error");
+    return;
+  }
+  if (mode === "web" && !webSearchReady()) {
+    openSettings();
+    toast("Set up a web search provider in Settings first.", "error");
     return;
   }
 
-  let searchHits = [];
-  if (mode === "search") {
+  let fetchHits = [];
+  if (mode === "fetch") {
     statState("Searching document…");
     try {
-      searchHits = await invoke("search_document", {
+      fetchHits = await invoke("fetch_document", {
         markdown: state.doc.content,
         query: text,
         limit: 5,
       });
     } catch (err) {
-      toast(`Search failed: ${err}`, "error");
+      toast(`Fetch failed: ${err}`, "error");
       statState("Ready");
       return;
     }
-    if (!searchHits.length) toast("No matching passages found.", "");
+    if (!fetchHits.length) toast("No matching passages found.", "");
   }
 
   ensureChatVisible();
@@ -1049,7 +1229,8 @@ async function sendMessage(override) {
     reasoningBox: node.reasoningBox,
     reasoningBody: node.reasoningBody,
     seq: 0,
-    searchHits,
+    fetchHits,
+    webHits: [],
     mode,
   };
   node.body.classList.add("stream-caret");
@@ -1065,13 +1246,26 @@ async function sendMessage(override) {
   renderSelectionChip();
 
   setStreamingUI(true);
-  statState(mode === "search" ? "Searching…" : "Thinking…");
+  statState(mode === "web" ? "Planning search..." : mode === "fetch" ? "Fetching..." : "Thinking...");
   chatScrollToBottom(true);
 
   const messages = state.thread
     .slice(-20)
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => ({ role: message.role, content: message.content }));
+
+  const previousWebResults = [...state.thread]
+    .reverse()
+    .find(
+      (message) =>
+        message.role === "assistant" &&
+        Array.isArray(message.webSources) &&
+        message.webSources.length
+    )?.webSources;
+  const followUpWebResults =
+    mode === "ask" || mode === "fetch"
+      ? (previousWebResults || []).slice(0, 8)
+      : [];
 
   try {
     await invoke("chat", {
@@ -1085,7 +1279,9 @@ async function sendMessage(override) {
         systemPrompt: state.settings.systemPrompt,
         mode,
         thinking: !!state.settings.thinking,
-        searchResults: searchHits,
+        fetchResults: fetchHits,
+        webSearch: mode === "web",
+        webResults: followUpWebResults,
       },
     });
   } catch (err) {
@@ -1135,6 +1331,54 @@ function wireLlmEvents() {
     if (!state.streaming || state.streaming.id !== id) return;
     finishStreaming({ error: message || "The provider returned an error." });
   });
+
+  listen("search:start", (event) => {
+    const { id, queries, provider } = event.payload || {};
+    const stream = state.streaming;
+    if (!stream || stream.id !== id) return;
+    const ui = ensureSearchCard(stream);
+    ui.title.textContent = provider ? `Searching with ${provider}…` : "Searching the web…";
+    ui.queries.textContent = "";
+    stream.searchQueries = Array.isArray(queries) ? [...queries] : [];
+    (Array.isArray(queries) ? queries : []).forEach((query) => {
+      const chip = document.createElement("span");
+      chip.className = "search-query";
+      chip.textContent = query;
+      ui.queries.appendChild(chip);
+    });
+    statState("Searching the web...");
+    chatScrollToBottom();
+  });
+
+  listen("search:results", (event) => {
+    const { id, hits } = event.payload || {};
+    const stream = state.streaming;
+    if (!stream || stream.id !== id) return;
+    addSearchResults(stream, hits);
+    statState(`Searching the web... ${stream.webHits.length} sources`);
+    chatScrollToBottom();
+  });
+
+  listen("search:error", (event) => {
+    const { id, message } = event.payload || {};
+    const stream = state.streaming;
+    if (!stream || stream.id !== id) return;
+    setSearchFailure(stream, message || "Web search failed.");
+    stream.searchFailed = true;
+    statState("Web search unavailable");
+    chatScrollToBottom();
+  });
+
+  listen("search:done", (event) => {
+    const { id, status, hits } = event.payload || {};
+    const stream = state.streaming;
+    if (!stream || stream.id !== id) return;
+    if (stream.searchCard || (status && status !== "skipped")) {
+      finishSearchCard(stream, status || "ok", Number(hits) || stream.webHits.length);
+    }
+    statState("Thinking...");
+    chatScrollToBottom();
+  });
 }
 
 function wireDocumentEvents() {
@@ -1167,6 +1411,11 @@ function openSettings(focusKey = false) {
   $("systemPrompt").value = state.settings.systemPrompt || "";
   $("includeDocInput").checked = state.settings.includeDocument !== false;
   $("thinkingInput").checked = state.settings.thinking === true;
+  const web = state.settings.webSearch;
+  $("webSearchEnabled").checked = web?.enabled === true;
+  $("searchMaxResults").value = web?.maxResults || 5;
+  fillSearchProviderSelect();
+  loadSearchProviderIntoForm(web?.activeProvider || web?.providers?.[0]?.id || "");
   $("saveHint").textContent = "";
   syncCredentialStatus();
   $("settingsModal").hidden = false;
@@ -1221,6 +1470,77 @@ function loadProviderIntoForm(id) {
       : "Session only — the system credential store is unavailable.";
 }
 
+let formSearchProviderId = null;
+
+function currentFormSearchProvider() {
+  return (
+    state.settings?.webSearch?.providers.find(
+      (provider) => provider.id === formSearchProviderId
+    ) || null
+  );
+}
+
+function fillSearchProviderSelect() {
+  const select = $("searchProviderSelect");
+  if (!select) return;
+  select.textContent = "";
+  (state.settings?.webSearch?.providers || []).forEach((provider) => {
+    const option = document.createElement("option");
+    option.value = provider.id;
+    option.textContent = provider.label;
+    select.appendChild(option);
+  });
+  const active = state.settings?.webSearch?.activeProvider;
+  if (active) select.value = active;
+}
+
+function loadSearchProviderIntoForm(id) {
+  const provider = state.settings?.webSearch?.providers.find((p) => p.id === id);
+  if (!provider) return;
+  formSearchProviderId = provider.id;
+  const status = state.settings?.credentials;
+  const backend = status?.backend || "the system credential store";
+  const needsKey = searchProviderNeedsKey(provider);
+
+  $("searchProviderSelect").value = provider.id;
+  $("searchEndpointInput").value = provider.endpoint || "";
+  $("searchKeyInput").value = state.searchPendingKeys.get(provider.id) || "";
+  $("searchKeyInput").placeholder = provider.hasKey
+    ? "Saved - type a new key to replace it"
+    : needsKey
+      ? "Paste your search API key"
+      : "Not required for this endpoint";
+  $("clearSearchKeyBtn").hidden =
+    !provider.hasKey && !state.searchPendingKeys.get(provider.id);
+  $("searchKeyInput").disabled = false;
+  $("searchKeyHint").textContent = provider.hasKey
+    ? `Saved in ${backend}. Search keys are stored separately from chat keys.`
+    : needsKey
+      ? `Stored in ${backend}. Never sent back to this window.`
+      : "Optional for SearXNG or a local search endpoint.";
+  $("searchEndpointHint").textContent =
+    provider.kind === "searxng"
+      ? "Point this at a SearXNG instance that allows JSON output, e.g. http://localhost:8080/search."
+      : "Use the provider's search endpoint. Tavily, Brave, Serper and Exa all use HTTPS.";
+}
+
+function captureSearchForm() {
+  const web = state.settings?.webSearch;
+  if (!web) return;
+  const provider = currentFormSearchProvider();
+  web.enabled = $("webSearchEnabled").checked;
+  web.maxResults = Number.parseInt($("searchMaxResults").value, 10) || 5;
+  if (!provider) return;
+  provider.endpoint = $("searchEndpointInput").value.trim();
+  web.activeProvider = $("searchProviderSelect").value || provider.id;
+  const typed = $("searchKeyInput").value.trim();
+  if (typed) {
+    state.searchPendingKeys.set(provider.id, typed);
+    state.searchClearedKeys.delete(provider.id);
+  }
+}
+
+
 function captureFormIntoSettings() {
   const provider = currentFormProvider();
   if (!provider) return;
@@ -1237,6 +1557,7 @@ function captureFormIntoSettings() {
   state.settings.systemPrompt = $("systemPrompt").value;
   state.settings.includeDocument = $("includeDocInput").checked;
   state.settings.thinking = $("thinkingInput").checked;
+  captureSearchForm();
 }
 
 function buildSettingsPayload() {
@@ -1244,6 +1565,7 @@ function buildSettingsPayload() {
   if ($("providerSelect").value) {
     state.settings.activeProvider = $("providerSelect").value;
   }
+  const web = state.settings.webSearch;
   return {
     activeProvider: state.settings.activeProvider,
     providers: state.settings.providers.map((provider) => {
@@ -1261,6 +1583,28 @@ function buildSettingsPayload() {
         apiKey: key,
       };
     }),
+    webSearch: web
+      ? {
+          enabled: web.enabled === true,
+          activeProvider: web.activeProvider,
+          maxResults: web.maxResults,
+          timeoutSecs: web.timeoutSecs,
+          providers: web.providers.map((provider) => {
+            const key = state.searchClearedKeys.has(provider.id)
+              ? ""
+              : state.searchPendingKeys.has(provider.id)
+                ? state.searchPendingKeys.get(provider.id)
+                : undefined;
+            return {
+              id: provider.id,
+              label: provider.label,
+              kind: provider.kind,
+              endpoint: provider.endpoint,
+              apiKey: key,
+            };
+          }),
+        }
+      : undefined,
     temperature: state.settings.temperature,
     maxTokens: state.settings.maxTokens,
     systemPrompt: state.settings.systemPrompt,
@@ -1270,6 +1614,7 @@ function buildSettingsPayload() {
 }
 
 function payloadFromState() {
+  const web = state.settings.webSearch;
   return {
     activeProvider: state.settings.activeProvider,
     providers: state.settings.providers.map((provider) => ({
@@ -1279,6 +1624,20 @@ function payloadFromState() {
       baseUrl: provider.baseUrl,
       model: provider.model,
     })),
+    webSearch: web
+      ? {
+          enabled: web.enabled === true,
+          activeProvider: web.activeProvider,
+          maxResults: web.maxResults,
+          timeoutSecs: web.timeoutSecs,
+          providers: web.providers.map((provider) => ({
+            id: provider.id,
+            label: provider.label,
+            kind: provider.kind,
+            endpoint: provider.endpoint,
+          })),
+        }
+      : undefined,
     temperature: state.settings.temperature,
     maxTokens: state.settings.maxTokens,
     systemPrompt: state.settings.systemPrompt,
@@ -1293,7 +1652,10 @@ async function persistSettings({ silent = true, fromForm = true } = {}) {
   state.settings = view;
   pendingKeys.clear();
   clearedKeys.clear();
+  state.searchPendingKeys.clear();
+  state.searchClearedKeys.clear();
   syncProviderUI();
+  if (typeof updateChatModeUI === "function") updateChatModeUI();
   syncCredentialStatus();
   $("contextToggle").setAttribute("aria-pressed", String(!!view.includeDocument));
   if (!silent) $("saveHint").textContent = "Saved.";
@@ -1303,6 +1665,7 @@ async function persistSettings({ silent = true, fromForm = true } = {}) {
 async function saveSettingsFromForm() {
   const provider = currentFormProvider();
   if (!provider) return;
+  captureSearchForm();
   if (!provider.model) {
     $("saveHint").textContent = "Add a model name first.";
     $("modelInput").focus();
@@ -1312,6 +1675,24 @@ async function saveSettingsFromForm() {
     $("saveHint").textContent = "Add a base URL for this provider.";
     $("baseUrlInput").focus();
     return;
+  }
+  if (state.settings.webSearch?.enabled) {
+    const searchProvider = currentFormSearchProvider();
+    if (!searchProvider?.endpoint) {
+      $("saveHint").textContent = "Add a web search endpoint or turn web search off.";
+      $("searchEndpointInput").focus();
+      return;
+    }
+    if (searchProviderNeedsKey(searchProvider)) {
+      const hasKey =
+        (searchProvider.hasKey && !state.searchClearedKeys.has(searchProvider.id)) ||
+        !!state.searchPendingKeys.get(searchProvider.id);
+      if (!hasKey) {
+        $("saveHint").textContent = "Add a search API key or turn web search off.";
+        $("searchKeyInput").focus();
+        return;
+      }
+    }
   }
   const button = $("settingsSave");
   button.disabled = true;
@@ -1713,6 +2094,35 @@ function wireEvents() {
     $("keyInput").value = "";
     $("keyInput").placeholder = "Key will be removed when you save";
     $("clearKeyBtn").hidden = true;
+  });
+  $("searchProviderSelect").addEventListener("change", (event) => {
+    if (formSearchProviderId) captureSearchForm();
+    loadSearchProviderIntoForm(event.target.value);
+  });
+  $("searchKeyInput").addEventListener("input", () => {
+    const provider = currentFormSearchProvider();
+    if (!provider) return;
+    const value = $("searchKeyInput").value.trim();
+    if (value) {
+      state.searchPendingKeys.set(provider.id, value);
+      state.searchClearedKeys.delete(provider.id);
+    } else {
+      state.searchPendingKeys.delete(provider.id);
+    }
+  });
+  $("clearSearchKeyBtn").addEventListener("click", () => {
+    const provider = currentFormSearchProvider();
+    if (!provider) return;
+    state.searchPendingKeys.set(provider.id, "");
+    state.searchClearedKeys.add(provider.id);
+    $("searchKeyInput").value = "";
+    $("searchKeyInput").placeholder = "Key will be removed when you save";
+    $("clearSearchKeyBtn").hidden = true;
+  });
+  $("webSearchEnabled").addEventListener("change", () => {
+    if (state.settings?.webSearch) {
+      state.settings.webSearch.enabled = $("webSearchEnabled").checked;
+    }
   });
   $("tempInput").addEventListener("input", () => {
     $("tempValue").textContent = Number.parseFloat($("tempInput").value).toFixed(1);
