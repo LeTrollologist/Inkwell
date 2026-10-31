@@ -1,6 +1,6 @@
 [package]
 name = "inkwell"
-version = "0.1.1"
+version = "0.2.0"
 description = "A sleek Markdown viewer with a BYOK LLM copilot"
 authors = ["Inkwell"]
 edition = "2021"
@@ -33,6 +33,9 @@ windows-sys = { version = "0.59", features = [
 
 [dev-dependencies]
 tokio = { version = "1", features = ["net", "io-util", "macros"] }
+
+[build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = "s"

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::app::Emitter;
+use crate::search::SearchHit;
 use crate::settings::{is_local_endpoint, ProviderConfig, DEFAULT_SYSTEM_PROMPT};
 
 /// Roughly 30k tokens of document context.
@@ -42,6 +43,13 @@ pub struct ChatRequest {
     pub max_tokens: u32,
     #[serde(default)]
     pub system_prompt: String,
+    /// `ask`, `search` or `edit`.
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub thinking: bool,
+    #[serde(default)]
+    pub search_results: Vec<SearchHit>,
 }
 
 fn default_max_tokens() -> u32 {
@@ -153,6 +161,41 @@ pub fn compose_system(req: &ChatRequest) -> String {
         system.push_str(&truncate_chars(selection, 8_000));
         system.push_str("\n</selection>");
     }
+    if !req.search_results.is_empty() {
+        system.push_str("\n\n<search_results>\n");
+        for (index, hit) in req.search_results.iter().enumerate() {
+            let heading = if hit.heading.trim().is_empty() {
+                "Document"
+            } else {
+                hit.heading.as_str()
+            };
+            system.push_str(&format!(
+                "[{}] {} (line {})\n{}\n\n",
+                index + 1,
+                heading,
+                hit.line,
+                hit.snippet
+            ));
+        }
+        system.push_str(
+            "</search_results>\nThese passages were retrieved by searching the document locally. \
+             Base the answer on them when relevant, cite the heading in square brackets, and say \
+             when the retrieved passages do not contain the answer.",
+        );
+    } else if req.mode == "search" && req.document.is_none() {
+        system.push_str(
+            "\n\nNo passages matched the local document search. Tell the user that the document \
+             does not appear to contain the answer; do not invent a source.",
+        );
+    }
+    if req.mode == "edit" {
+        system.push_str(
+            "\n\nYou are editing the full document above. Apply the user's requested change and \
+             return the COMPLETE revised Markdown document in exactly one fenced block delimited \
+             by four backticks, like ````markdown ... ````. Preserve front matter and everything \
+             the user did not ask to change. Do not add commentary outside the fenced block.",
+        );
+    }
     system
 }
 
@@ -251,6 +294,14 @@ fn text_of(value: &Value) -> Option<String> {
     }
 }
 
+fn is_reasoning_model(model: &str) -> bool {
+    let model = model.to_ascii_lowercase();
+    model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+        || model.starts_with("gpt-5")
+}
+
 pub fn build_request(
     provider: &ProviderConfig,
     req: &ChatRequest,
@@ -284,6 +335,13 @@ pub fn build_request(
                 "stream": true,
                 "messages": messages,
             });
+            if req.thinking {
+                let budget = (max_tokens / 2).clamp(1024, 4096);
+                body["max_tokens"] = json!(max_tokens.max(budget + 512));
+                // Anthropic requires temperature 1 when extended thinking is on.
+                body["temperature"] = json!(1.0);
+                body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
+            }
             if !system.trim().is_empty() {
                 body["system"] = json!(system);
             }
@@ -307,12 +365,19 @@ pub fn build_request(
                     })
                 })
                 .collect();
+            let mut generation = json!({
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            });
+            if req.thinking {
+                generation["thinkingConfig"] = json!({
+                    "includeThoughts": true,
+                    "thinkingBudget": 1024
+                });
+            }
             let mut body = json!({
                 "contents": contents,
-                "generationConfig": {
-                    "temperature": temperature,
-                    "maxOutputTokens": max_tokens,
-                },
+                "generationConfig": generation,
             });
             if !system.trim().is_empty() {
                 body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
@@ -339,13 +404,22 @@ pub fn build_request(
                 }
                 messages.push(json!({ "role": role, "content": message.content }));
             }
-            let body = json!({
+            let reasoning_model = is_reasoning_model(model);
+            let mut body = json!({
                 "model": model,
                 "stream": true,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
                 "messages": messages,
             });
+            if reasoning_model {
+                body["temperature"] = json!(1.0);
+                body["max_completion_tokens"] = json!(max_tokens);
+            } else {
+                body["temperature"] = json!(temperature);
+                body["max_tokens"] = json!(max_tokens);
+            }
+            if req.thinking && (reasoning_model || provider.base_url.contains("openrouter.ai")) {
+                body["reasoning_effort"] = json!("medium");
+            }
             let mut headers = vec![("content-type".into(), "application/json".into())];
             if !key.is_empty() {
                 headers.push(("authorization".into(), format!("Bearer {key}")));
@@ -794,6 +868,9 @@ mod tests {
             temperature: 0.2,
             max_tokens: 400,
             system_prompt: "Be terse.".into(),
+            mode: "ask".into(),
+            thinking: false,
+            search_results: Vec::new(),
         }
     }
 
@@ -857,6 +934,62 @@ mod tests {
             prepared.body["generationConfig"]["maxOutputTokens"],
             serde_json::json!(400)
         );
+    }
+
+    #[test]
+    fn reasoning_models_use_reasoning_controls() {
+        let mut cfg = provider("openai");
+        cfg.model = "o3-mini".into();
+        let mut req = request();
+        req.thinking = true;
+        let prepared = build_request(&cfg, &req).unwrap();
+        assert_eq!(prepared.body["max_completion_tokens"], 400);
+        assert!(prepared.body.get("max_tokens").is_none());
+        assert_eq!(prepared.body["reasoning_effort"], "medium");
+        assert_eq!(prepared.body["temperature"], 1.0);
+    }
+
+    #[test]
+    fn anthropic_thinking_sets_a_budget() {
+        let mut req = request();
+        req.thinking = true;
+        let prepared = build_request(&provider("anthropic"), &req).unwrap();
+        assert_eq!(prepared.body["thinking"]["type"], "enabled");
+        assert_eq!(prepared.body["thinking"]["budget_tokens"], 1024);
+        assert_eq!(prepared.body["temperature"], 1.0);
+        assert!(prepared.body["max_tokens"].as_u64().unwrap() > 1024);
+    }
+
+    #[test]
+    fn gemini_thinking_requests_thoughts() {
+        let mut req = request();
+        req.thinking = true;
+        let prepared = build_request(&provider("gemini"), &req).unwrap();
+        assert_eq!(
+            prepared.body["generationConfig"]["thinkingConfig"]["includeThoughts"],
+            true
+        );
+    }
+
+    #[test]
+    fn search_results_and_edit_mode_reach_the_system_prompt() {
+        let mut req = request();
+        req.mode = "search".into();
+        req.search_results = vec![SearchHit {
+            heading: "Installation > Windows".into(),
+            line: 12,
+            snippet: "Run the installer.".into(),
+            score: 1.0,
+        }];
+        let prompt = compose_system(&req);
+        assert!(prompt.contains("<search_results>"));
+        assert!(prompt.contains("Installation > Windows"));
+        assert!(prompt.contains("Run the installer."));
+
+        req.mode = "edit".into();
+        let prompt = compose_system(&req);
+        assert!(prompt.contains("fenced block"));
+        assert!(prompt.contains("COMPLETE revised Markdown"));
     }
 
     #[test]

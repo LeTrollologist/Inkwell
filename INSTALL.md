@@ -1,7 +1,7 @@
 # Installing Inkwell
 
-Inkwell is a local-first Markdown reader with an optional bring-your-own-key LLM copilot.
-The Windows installer is per-user and does **not** require administrator rights.
+Inkwell is a local-first Markdown editor and reader with an optional bring-your-own-key LLM
+copilot. The Windows installer is per-user and does **not** require administrator rights.
 
 > **Upgrading from v0.1.0?** v0.1.0 was missing `WebView2Loader.dll` and could fail at startup
 > on some machines. Install v0.1.1 or newer; your settings and keys are preserved.
@@ -27,11 +27,11 @@ The Windows installer is per-user and does **not** require administrator rights.
 ### SmartScreen
 
 Release builds are currently **not code-signed**. Windows may show
-“Windows protected your PC”. To continue, choose **More info → Run anyway**. If you prefer,
+â€œWindows protected your PCâ€. To continue, choose **More info â†’ Run anyway**. If you prefer,
 verify the download first:
 
 ```powershell
-certutil -hashfile .\Inkwell-Setup-0.1.1.exe SHA256
+certutil -hashfile .\Inkwell-Setup-0.2.0.exe SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -41,7 +41,7 @@ The hashes must match the installer and portable zip in the release.
 
 ```powershell
 # Install (or upgrade in place) without prompts
-.\Inkwell-Setup-0.1.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+.\Inkwell-Setup-0.2.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 Upgrades keep the previous install folder, shortcuts, file-association choice and all user
@@ -55,7 +55,7 @@ and keys still use the normal per-user locations below.
 
 ## Uninstall
 
-- **Settings → Apps → Installed apps → Inkwell → Uninstall**, or
+- **Settings â†’ Apps â†’ Installed apps â†’ Inkwell â†’ Uninstall**, or
 - Run `Uninstall.exe` in the install folder.
 
 Uninstalling removes the application, shortcuts, file associations and installer registry
@@ -81,7 +81,7 @@ API keys are held in Windows Credential Manager under the service name
 
 ## Troubleshooting
 
-- **“WebView2 Runtime is not installed.”** Install the
+- **â€œWebView2 Runtime is not installed.â€** Install the
   [Evergreen Runtime](https://go.microsoft.com/fwlink/p/?LinkId=2124703), then run setup again.
 - **Inkwell does not start.** Confirm Windows 10/11 x64 and WebView2. Try the portable build
   to see whether the issue is installation-specific.

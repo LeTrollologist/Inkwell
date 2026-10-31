@@ -3,6 +3,32 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.2.0] - 2026-10-28
+
+### Added
+
+- **Markdown editor** — the source pane is now an editor with `Ctrl+S`, `Ctrl+Shift+S`
+  (save as), unsaved-change indicators, confirmation before discarding edits, and a native
+  save dialog for untitled documents.
+- **Search mode** — local heading-aware retrieval over the open document. Retrieved passages
+  are included in the prompt, the assistant is asked to cite headings, and the UI lists
+  clickable sources under the answer.
+- **Edit mode** — the assistant proposes a complete revised Markdown document in a fenced
+  block; a review card lets you apply it to the editor without saving automatically.
+- **Reasoning/thinking toggle** — opt-in provider controls for OpenAI reasoning models
+  (`max_completion_tokens` + `reasoning_effort`), Anthropic extended thinking
+  (`thinking.budget_tokens`), Gemini `thinkingConfig`, and OpenRouter `reasoning_effort`.
+- **LaTeX math** — `$…$` and `$$…$$` are parsed by `pulldown-cmark` and rendered offline with
+  bundled KaTeX 0.16.22 and fonts.
+- **PE resources** — application icon and version metadata are embedded in `inkwell.exe`, so
+  Explorer, shortcuts and Add/Remove Programs show the proper Inkwell icon.
+
+### Changed
+
+- Chat composer has Ask / Search doc / Edit doc modes; the mode is remembered locally.
+- Document edits update the outline, preview and session while preserving unsaved state.
+- README documents the editor, assistant modes, reasoning support and math.
+
 ## [0.1.1] - 2026-10-27
 
 ### Fixed

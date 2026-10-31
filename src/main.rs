@@ -5,6 +5,7 @@ mod assets;
 mod credentials;
 mod llm;
 mod markdown;
+mod search;
 mod settings;
 
 use std::path::PathBuf;

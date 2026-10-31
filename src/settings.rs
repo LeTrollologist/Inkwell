@@ -41,6 +41,8 @@ pub struct Settings {
     pub max_tokens: u32,
     pub system_prompt: String,
     pub include_document: bool,
+    #[serde(default)]
+    pub thinking: bool,
 }
 
 impl Default for Settings {
@@ -52,6 +54,7 @@ impl Default for Settings {
             max_tokens: 1500,
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             include_document: true,
+            thinking: false,
         }
     }
 }
@@ -99,6 +102,7 @@ pub struct SettingsView {
     pub max_tokens: u32,
     pub system_prompt: String,
     pub include_document: bool,
+    pub thinking: bool,
     /// Whether the OS credential store is available, and which backend it is.
     pub credentials: CredentialStatus,
 }
@@ -123,6 +127,7 @@ impl Settings {
             max_tokens: self.max_tokens,
             system_prompt: self.system_prompt.clone(),
             include_document: self.include_document,
+            thinking: self.thinking,
             credentials: credentials.status().clone(),
         }
     }
@@ -155,6 +160,8 @@ pub struct SettingsInput {
     pub max_tokens: u32,
     pub system_prompt: String,
     pub include_document: bool,
+    #[serde(default)]
+    pub thinking: bool,
 }
 
 
@@ -191,6 +198,7 @@ impl SettingsInput {
         previous.max_tokens = self.max_tokens.clamp(64, 32_000);
         previous.system_prompt = self.system_prompt;
         previous.include_document = self.include_document;
+        previous.thinking = self.thinking;
         previous
     }
 }
@@ -316,6 +324,7 @@ mod tests {
             max_tokens: 1,
             system_prompt: "hi".into(),
             include_document: true,
+            thinking: false,
         }
     }
 

@@ -12,6 +12,7 @@ const LS = {
   session: "inkwell.session",
   rail: "inkwell.rail",
   chat: "inkwell.chat",
+  chatMode: "inkwell.chatMode",
 };
 
 const MAX_DOC_BYTES = 8 * 1024 * 1024;
@@ -31,13 +32,17 @@ const state = {
   doc: null,
   outline: [],
   raw: "",
+  savedContent: "",
+  dirty: false,
   view: "rendered",
   thread: [],
   streaming: null,
   selection: "",
+  chatMode: localStorage.getItem(LS.chatMode) || "ask",
   models: [],
   keyCleared: false,
   renderTimer: 0,
+  sessionTimer: 0,
   activeHeading: "",
 };
 
@@ -214,38 +219,78 @@ function enhanceTables(root) {
   });
 }
 
+function renderMath(root) {
+  if (!window.katex) return;
+  root.querySelectorAll(".math-inline, .math-display").forEach((el) => {
+    if (el.dataset.mathRendered === "true") return;
+    try {
+      katex.render(el.textContent || "", el, {
+        displayMode: el.classList.contains("math-display"),
+        throwOnError: false,
+        strict: "ignore",
+        trust: false,
+      });
+      el.dataset.mathRendered = "true";
+    } catch {
+      /* leave the TeX visible if KaTeX cannot parse it */
+    }
+  });
+}
+
 function enhanceMarkdown(root, { compact = false } = {}) {
   enhanceTables(root);
   enhanceCodeBlocks(root);
+  renderMath(root);
   if (!compact) addHeadingAnchors(root);
 }
 
 /* ------------------------------------------------------------- document view */
 
+function updateDirtyUI() {
+  const hasDoc = !!state.doc;
+  state.dirty = hasDoc && $("source").value !== state.savedContent;
+  if (hasDoc) {
+    $("docTitle").textContent = `${state.dirty ? "• " : ""}${state.doc.title}`;
+    $("docMeta").textContent = `${state.doc.name} · ${formatBytes(state.doc.size)}${
+      state.dirty ? " · Unsaved" : ""
+    }`;
+  }
+  $("editorState").textContent = state.dirty ? "Unsaved changes" : "Saved";
+  $("editorState").classList.toggle("dirty", state.dirty);
+  const showSave = hasDoc && (state.view === "source" || state.dirty);
+  $("saveBtn").hidden = !showSave;
+  $("saveBtn").disabled = !showSave;
+}
+
 function setView(view) {
   state.view = view === "source" ? "source" : "rendered";
   $("app").dataset.view = state.view;
   const hasDoc = !!state.doc;
-  $("doc").hidden = !hasDoc || state.view !== "rendered";
-  $("source").hidden = !hasDoc || state.view !== "source";
+  const isSource = state.view === "source";
+  $("doc").hidden = !hasDoc || isSource;
+  $("editorShell").hidden = !hasDoc || !isSource;
   $("empty").hidden = hasDoc;
-  $("sourceBtn").classList.toggle("active", state.view === "source");
-  $("sourceBtn").title =
-    state.view === "source"
-      ? "Back to rendered view (Ctrl+U)"
-      : "View Markdown source (Ctrl+U)";
+  $("sourceBtn").classList.toggle("active", isSource);
+  $("sourceBtn").title = isSource
+    ? "Back to preview (Ctrl+U)"
+    : "Edit Markdown source (Ctrl+U)";
+  updateDirtyUI();
 }
 
 function showEmpty() {
   state.doc = null;
+  state.savedContent = "";
+  state.dirty = false;
+  state.raw = "";
   $("doc").hidden = true;
-  $("source").hidden = true;
+  $("editorShell").hidden = true;
   $("empty").hidden = false;
   $("docTitle").textContent = "No document";
   $("docMeta").textContent = "";
   $("statFile").textContent = "No document";
   $("statCounts").textContent = "—";
   $("docChip").hidden = true;
+  $("source").value = "";
   $("toc").innerHTML = '<p class="rail-hint">Open a document to see its outline.</p>';
   $("tocCount").textContent = "";
   setView("rendered");
@@ -256,6 +301,14 @@ async function setDocument(name, content, options = {}) {
   if (content.length > MAX_DOC_BYTES) {
     toast("That document is too large to open (8 MB limit).", "error");
     return;
+  }
+  if (
+    state.doc &&
+    state.dirty &&
+    !options.keepSaved &&
+    options.confirmDiscard !== false
+  ) {
+    if (!confirm(`Discard unsaved changes in ${state.doc.name}?`)) return;
   }
 
   let rendered;
@@ -279,15 +332,18 @@ async function setDocument(name, content, options = {}) {
   state.doc = doc;
   state.outline = doc.outline;
   state.raw = content;
+  if (typeof options.savedContent === "string") {
+    state.savedContent = options.savedContent;
+  } else if (!options.keepSaved) {
+    state.savedContent = content;
+  }
   state.selection = "";
   renderSelectionChip();
 
   $("doc").innerHTML = rendered.html;
   enhanceMarkdown($("doc"));
-  $("source").textContent = content;
+  $("source").value = content;
 
-  $("docTitle").textContent = doc.title;
-  $("docMeta").textContent = `${doc.name} · ${formatBytes(doc.size)}`;
   $("statFile").textContent = doc.name;
   $("statCounts").textContent = `${doc.words.toLocaleString()} words · ${Math.max(
     1,
@@ -297,6 +353,7 @@ async function setDocument(name, content, options = {}) {
 
   buildToc();
   setView("rendered");
+  updateDirtyUI();
   $("reader").scrollTop = 0;
   requestAnimationFrame(() => {
     $("reader").scrollTop = 0;
@@ -473,7 +530,16 @@ function saveSession(doc) {
       localStorage.removeItem(LS.session);
       return;
     }
-    localStorage.setItem(LS.session, JSON.stringify({ name: doc.name, content: doc.content, path: doc.path || null }));
+    localStorage.setItem(
+      LS.session,
+      JSON.stringify({
+        name: doc.name,
+        content: doc.content,
+        path: doc.path || null,
+        size: doc.size,
+        savedContent: state.savedContent,
+      })
+    );
   } catch {
     /* ignore */
   }
@@ -488,6 +554,9 @@ async function restoreSession() {
     await setDocument(parsed.name || "untitled.md", parsed.content, {
       remember: false,
       path: parsed.path || null,
+      size: parsed.size,
+      savedContent:
+        typeof parsed.savedContent === "string" ? parsed.savedContent : parsed.content,
     });
     return true;
   } catch {
@@ -664,6 +733,9 @@ async function renderThread() {
         const rendered = await renderMarkdown(message.content || "");
         node.body.innerHTML = rendered.html;
         enhanceMarkdown(node.body, { compact: true });
+        if (Array.isArray(message.sources) && message.sources.length) {
+          renderSources(node.root, message.sources);
+        }
       } catch {
         node.body.textContent = message.content;
       }
@@ -692,6 +764,7 @@ function restoreThread() {
         role: message.role,
         content: typeof message.content === "string" ? message.content : "",
         reasoning: typeof message.reasoning === "string" ? message.reasoning : "",
+        sources: Array.isArray(message.sources) ? message.sources : [],
       }));
   } catch {
     state.thread = [];
@@ -724,6 +797,7 @@ function scheduleStreamRender() {
       const rendered = await renderMarkdown(stream.content);
       if (state.streaming !== stream || stream.seq !== seq) return;
       stream.body.innerHTML = rendered.html;
+      renderMath(stream.body);
     } catch {
       /* keep the previous frame */
     }
@@ -746,6 +820,18 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
     stream.body.textContent = stream.content;
   }
 
+  if (stream.searchHits?.length) {
+    renderSources(stream.root, stream.searchHits);
+  }
+  if (stream.mode === "edit" && !error && reason !== "cancelled") {
+    const proposed = extractMarkdownBlock(stream.content);
+    if (proposed) {
+      addAiEditCard(stream.root, proposed);
+    } else {
+      toast("The model did not return a complete fenced document.", "error");
+    }
+  }
+
   if (error) {
     const box = document.createElement("div");
     box.className = "chat-error";
@@ -758,6 +844,7 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
       role: "assistant",
       content: stream.content,
       reasoning: stream.reasoning,
+      sources: stream.searchHits || [],
     });
     saveThread();
   }
@@ -766,6 +853,125 @@ async function finishStreaming({ reason = "stop", error = "" } = {}) {
   statState(error ? "Error" : reason === "cancelled" ? "Stopped" : "Ready");
   chatScrollToBottom();
   $("prompt").focus();
+}
+
+function updateChatModeUI() {
+  if (!["ask", "search", "edit"].includes(state.chatMode)) state.chatMode = "ask";
+  const mode = state.chatMode;
+  const select = $("chatMode");
+  if (select && select.value !== mode) select.value = mode;
+  const placeholders = {
+    ask: "Ask about the document…",
+    search: "Search the document for…",
+    edit: "Describe the edit you want…",
+  };
+  $("prompt").placeholder = placeholders[mode] || placeholders.ask;
+  const editing = mode === "edit";
+  $("contextToggle").disabled = editing;
+  $("contextToggle").title = editing
+    ? "Edit mode always sends the full document."
+    : "Include the document in the request";
+  if (editing) $("contextToggle").setAttribute("aria-pressed", "true");
+}
+
+function renderSources(root, hits) {
+  if (!root || !Array.isArray(hits) || !hits.length) return;
+  let box = root.querySelector(".chat-sources");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "chat-sources";
+    const title = document.createElement("div");
+    title.className = "sources-title";
+    title.textContent = "Sources";
+    box.appendChild(title);
+    const meta = root.querySelector(".msg-meta");
+    if (meta) root.insertBefore(box, meta);
+    else root.appendChild(box);
+  }
+  box.querySelectorAll(".source-chip").forEach((chip) => chip.remove());
+  hits.forEach((hit, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "source-chip";
+    button.title = hit.snippet || "";
+    const label = document.createElement("span");
+    label.className = "source-name";
+    label.textContent = `${index + 1}. ${hit.heading || "Document"}`;
+    const line = document.createElement("span");
+    line.className = "source-line";
+    line.textContent = `line ${hit.line}`;
+    button.append(label, line);
+    button.addEventListener("click", () => scrollToHeadingText(hit.heading || ""));
+    box.appendChild(button);
+  });
+}
+
+async function scrollToHeadingText(text) {
+  if (!state.doc) return;
+  if (!text.trim()) return;
+  if (state.view === "source") await previewEditor();
+  const needle = text.split(" > ").pop().trim().toLowerCase();
+  const headings = [...$("doc").querySelectorAll("h1,h2,h3,h4,h5,h6")];
+  const target = headings.find((heading) =>
+    heading.textContent.trim().toLowerCase().includes(needle)
+  );
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    toast("That section is no longer in the document.", "error");
+  }
+}
+
+function extractMarkdownBlock(text) {
+  const four = text.match(/````(?:markdown|md)?\s*\n([\s\S]*?)````/i);
+  if (four) return four[1].trim();
+  const three = text.match(/```(?:markdown|md)?\s*\n([\s\S]*?)```/i);
+  return three ? three[1].trim() : null;
+}
+
+function applyAiEdit(markdown, card) {
+  if (!state.doc) {
+    toast("Open a document before applying an edit.", "error");
+    return;
+  }
+  if (!confirm("Replace the editor content with the AI's revised document?")) return;
+  $("source").value = markdown;
+  state.doc.content = markdown;
+  state.raw = markdown;
+  state.doc.size = new Blob([markdown]).size;
+  state.dirty = markdown !== state.savedContent;
+  setView("source");
+  updateDirtyUI();
+  saveSession(state.doc);
+  card?.classList.add("applied");
+  toast("AI edit loaded in the editor — review and save.");
+  $("source").focus();
+}
+
+function addAiEditCard(root, proposed) {
+  const card = document.createElement("div");
+  card.className = "ai-edit";
+  const title = document.createElement("strong");
+  title.textContent = "AI proposed an edit";
+  const hint = document.createElement("span");
+  hint.textContent = "The revised document is ready to review; nothing is saved yet.";
+  const actions = document.createElement("div");
+  actions.className = "ai-edit-actions";
+  const apply = document.createElement("button");
+  apply.type = "button";
+  apply.className = "primary-btn tiny";
+  apply.textContent = "Apply to editor";
+  apply.addEventListener("click", () => applyAiEdit(proposed, card));
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "ghost-btn tiny";
+  dismiss.textContent = "Dismiss";
+  dismiss.addEventListener("click", () => card.remove());
+  actions.append(apply, dismiss);
+  card.append(title, hint, actions);
+  const meta = root.querySelector(".msg-meta");
+  if (meta) root.insertBefore(card, meta);
+  else root.appendChild(card);
 }
 
 async function sendMessage(override) {
@@ -795,6 +1001,29 @@ async function sendMessage(override) {
     return;
   }
 
+  const mode = state.chatMode;
+  if ((mode === "search" || mode === "edit") && !state.doc) {
+    toast("Open a document before using Search or Edit mode.", "error");
+    return;
+  }
+
+  let searchHits = [];
+  if (mode === "search") {
+    statState("Searching document…");
+    try {
+      searchHits = await invoke("search_document", {
+        markdown: state.doc.content,
+        query: text,
+        limit: 5,
+      });
+    } catch (err) {
+      toast(`Search failed: ${err}`, "error");
+      statState("Ready");
+      return;
+    }
+    if (!searchHits.length) toast("No matching passages found.", "");
+  }
+
   ensureChatVisible();
   if (typeof override !== "string") {
     prompt.value = "";
@@ -820,6 +1049,8 @@ async function sendMessage(override) {
     reasoningBox: node.reasoningBox,
     reasoningBody: node.reasoningBody,
     seq: 0,
+    searchHits,
+    mode,
   };
   node.body.classList.add("stream-caret");
 
@@ -827,13 +1058,14 @@ async function sendMessage(override) {
   saveThread();
 
   const includeDocument =
-    $("contextToggle").getAttribute("aria-pressed") === "true" && !!state.doc;
+    mode === "edit" ||
+    ($("contextToggle").getAttribute("aria-pressed") === "true" && !!state.doc);
   const selection = state.selection || "";
   state.selection = "";
   renderSelectionChip();
 
   setStreamingUI(true);
-  statState("Thinking…");
+  statState(mode === "search" ? "Searching…" : "Thinking…");
   chatScrollToBottom(true);
 
   const messages = state.thread
@@ -851,6 +1083,9 @@ async function sendMessage(override) {
         temperature: state.settings.temperature,
         maxTokens: state.settings.maxTokens,
         systemPrompt: state.settings.systemPrompt,
+        mode,
+        thinking: !!state.settings.thinking,
+        searchResults: searchHits,
       },
     });
   } catch (err) {
@@ -931,6 +1166,7 @@ function openSettings(focusKey = false) {
   $("maxTokensInput").value = state.settings.maxTokens;
   $("systemPrompt").value = state.settings.systemPrompt || "";
   $("includeDocInput").checked = state.settings.includeDocument !== false;
+  $("thinkingInput").checked = state.settings.thinking === true;
   $("saveHint").textContent = "";
   syncCredentialStatus();
   $("settingsModal").hidden = false;
@@ -1000,6 +1236,7 @@ function captureFormIntoSettings() {
   state.settings.maxTokens = Number.parseInt($("maxTokensInput").value, 10) || 1500;
   state.settings.systemPrompt = $("systemPrompt").value;
   state.settings.includeDocument = $("includeDocInput").checked;
+  state.settings.thinking = $("thinkingInput").checked;
 }
 
 function buildSettingsPayload() {
@@ -1028,6 +1265,7 @@ function buildSettingsPayload() {
     maxTokens: state.settings.maxTokens,
     systemPrompt: state.settings.systemPrompt,
     includeDocument: state.settings.includeDocument,
+    thinking: state.settings.thinking === true,
   };
 }
 
@@ -1045,6 +1283,7 @@ function payloadFromState() {
     maxTokens: state.settings.maxTokens,
     systemPrompt: state.settings.systemPrompt,
     includeDocument: state.settings.includeDocument,
+    thinking: state.settings.thinking === true,
   };
 }
 
@@ -1194,12 +1433,58 @@ function toggleRail(force) {
   localStorage.setItem(LS.rail, app.dataset.rail);
 }
 
-function toggleSource() {
+async function toggleSource() {
   if (!state.doc) {
     toast("Open a document first.", "error");
     return;
   }
-  setView(state.view === "source" ? "rendered" : "source");
+  if (state.view === "source") {
+    await previewEditor();
+  } else {
+    $("source").value = state.doc.content;
+    setView("source");
+    $("source").focus();
+  }
+}
+
+async function previewEditor() {
+  if (!state.doc) return;
+  const content = $("source").value;
+  if (content.length > MAX_DOC_BYTES) {
+    toast("That document is too large to preview (8 MB limit).", "error");
+    return;
+  }
+  await setDocument(state.doc.name, content, {
+    path: state.doc.path,
+    size: new Blob([content]).size,
+    remember: false,
+    keepSaved: true,
+  });
+}
+
+async function saveDocument({ as = false } = {}) {
+  if (!state.doc) return;
+  const content = $("source").value;
+  try {
+    const saved = await invoke("save_document", {
+      path: as ? null : state.doc.path,
+      content,
+      defaultName: state.doc.name || "untitled.md",
+    });
+    if (!saved) return;
+    state.doc.path = saved.path;
+    state.doc.name = saved.name;
+    state.doc.size = saved.size;
+    state.doc.content = content;
+    state.raw = content;
+    state.savedContent = content;
+    updateDirtyUI();
+    saveSession(state.doc);
+    rememberDocument(state.doc);
+    toast(`Saved ${saved.name}`);
+  } catch (err) {
+    toast(String(err), "error");
+  }
 }
 
 function restoreLayout() {
@@ -1302,7 +1587,11 @@ function wireEvents() {
   // window chrome
   $("winMin").addEventListener("click", () => appWindow.minimize());
   $("winMax").addEventListener("click", () => appWindow.toggleMaximize());
-  $("winClose").addEventListener("click", () => appWindow.close());
+  $("winClose").addEventListener("click", () => {
+    if (state.dirty && !confirm("Discard unsaved changes?")) return;
+    state.dirty = false;
+    appWindow.close();
+  });
 
   const titlebar = document.querySelector(".titlebar");
   let dragStart = null;
@@ -1338,12 +1627,22 @@ function wireEvents() {
   // titlebar actions
   $("railBtn").addEventListener("click", () => toggleRail());
   $("sourceBtn").addEventListener("click", toggleSource);
+  $("saveBtn").addEventListener("click", () => saveDocument());
+  $("saveEditorBtn").addEventListener("click", () => saveDocument());
+  $("saveAsBtn").addEventListener("click", () => saveDocument({ as: true }));
+  $("previewBtn").addEventListener("click", previewEditor);
   $("themeBtn").addEventListener("click", () =>
     applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")
   );
   $("settingsBtn").addEventListener("click", () => openSettings());
   $("chatToggle").addEventListener("click", () => toggleChat());
   $("closeChatBtn").addEventListener("click", () => toggleChat(false));
+  $("chatMode").addEventListener("change", () => {
+    state.chatMode = $("chatMode").value;
+    localStorage.setItem(LS.chatMode, state.chatMode);
+    updateChatModeUI();
+  });
+  updateChatModeUI();
   $("providerChip").addEventListener("click", () => openSettings());
   $("statProvider").addEventListener("click", () => openSettings());
   $("railProvider").addEventListener("click", () => openSettings());
@@ -1354,6 +1653,17 @@ function wireEvents() {
   $("fileInput").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) openFile(file);
+  });
+  $("source").addEventListener("input", () => {
+    if (!state.doc) return;
+    state.doc.content = $("source").value;
+    state.raw = state.doc.content;
+    state.doc.size = new Blob([state.doc.content]).size;
+    updateDirtyUI();
+    clearTimeout(state.sessionTimer);
+    state.sessionTimer = setTimeout(() => {
+      if (state.doc) saveSession(state.doc);
+    }, 350);
   });
   $("sampleBtn").addEventListener("click", async () => {
     await setDocument("inkwell-welcome.md", SAMPLE_MD, { remember: false });
@@ -1512,6 +1822,9 @@ function wireInteractionEvents() {
     } else if (key === "u") {
       event.preventDefault();
       toggleSource();
+    } else if (key === "s") {
+      event.preventDefault();
+      saveDocument({ as: event.shiftKey });
     } else if (key === ",") {
       event.preventDefault();
       openSettings();
@@ -1523,6 +1836,13 @@ function wireInteractionEvents() {
       if ($("app").dataset.chat === "open") sendMessage();
     }
   });
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.dirty) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
 }
 
 /* ---------------------------------------------------------------------- boot */
