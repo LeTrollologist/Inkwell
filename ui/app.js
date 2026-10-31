@@ -1676,30 +1676,18 @@ async function saveSettingsFromForm() {
     $("baseUrlInput").focus();
     return;
   }
-  if (state.settings.webSearch?.enabled) {
-    const searchProvider = currentFormSearchProvider();
-    if (!searchProvider?.endpoint) {
-      $("saveHint").textContent = "Add a web search endpoint or turn web search off.";
-      $("searchEndpointInput").focus();
-      return;
-    }
-    if (searchProviderNeedsKey(searchProvider)) {
-      const hasKey =
-        (searchProvider.hasKey && !state.searchClearedKeys.has(searchProvider.id)) ||
-        !!state.searchPendingKeys.get(searchProvider.id);
-      if (!hasKey) {
-        $("saveHint").textContent = "Add a search API key or turn web search off.";
-        $("searchKeyInput").focus();
-        return;
-      }
-    }
-  }
   const button = $("settingsSave");
   button.disabled = true;
   button.textContent = "Saving…";
   try {
     await persistSettings({ silent: false });
-    toast("Settings saved");
+    const webNeedsSetup =
+      state.settings.webSearch?.enabled === true && !webSearchReady();
+    if (webNeedsSetup) {
+      toast("Chat settings saved. Web search still needs a valid provider and key.");
+    } else {
+      toast("Settings saved");
+    }
     $("settingsModal").hidden = true;
   } catch (err) {
     $("saveHint").textContent = String(err);

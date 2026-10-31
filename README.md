@@ -13,7 +13,7 @@
 <!-- Tier 1: project meta -->
 <p align="center">
   <a href="https://github.com/LeTrollologist/Inkwell/releases/latest">
-    <img src="https://img.shields.io/badge/Release-v0.3.0_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
+    <img src="https://img.shields.io/badge/Release-v0.3.1_Windows-8B7CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0a0b0f" alt="Release" />
   </a>
   <a href="src/markdown.rs">
     <img src="https://img.shields.io/badge/Renderer-pulldown--cmark_%2B_Rust-22D3EE?style=for-the-badge&logo=rust&logoColor=white&labelColor=0a0b0f" alt="Renderer" />
@@ -190,11 +190,11 @@ The executable lands at `target/release/inkwell.exe` and is self-contained (the 
 icon are embedded). To build the portable bundle and the per-user installer locally:
 
 ```powershell
-python scripts\pipeline.py v0.3.0 --no-publish
+python scripts\pipeline.py v0.3.1 --no-publish
 ```
 
-Outputs land in `dist\v0.3.0\`: `inkwell-v0.3.0-windows-x86_64.zip`,
-`Inkwell-Setup-0.3.0.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
+Outputs land in `dist\v0.3.1\`: `inkwell-v0.3.1-windows-x86_64.zip`,
+`Inkwell-Setup-0.3.1.exe` and `SHA256SUMS.txt`. The pipeline needs Python 3.10+ and Inno Setup
 6.3+; see [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full release and publishing flow.
 
 ## Connect a model

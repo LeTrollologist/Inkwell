@@ -3,6 +3,18 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.3.1] - 2026-10-31
+
+### Fixed
+
+- **API keys no longer disappear when Web search is incomplete.** If Web search was enabled
+  but its provider key or endpoint was missing, Save used to stop before persisting any chat
+  provider changes. The chat key was therefore never stored, and sending a prompt reopened
+  Settings with an empty key field. Inkwell now saves the chat provider normally, closes
+  Settings, and shows a non-blocking warning that Web search still needs configuration.
+- Web search remains unavailable until its own provider and key are complete; it no longer
+  blocks saving the rest of the assistant settings.
+
 ## [0.3.0] - 2026-10-31
 
 ### Added
