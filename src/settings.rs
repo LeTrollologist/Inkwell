@@ -169,6 +169,13 @@ pub fn default_providers() -> Vec<ProviderConfig> {
             "anthropic/claude-3.5-sonnet",
         ),
         preset(
+            "demonroute",
+            "Demon Route",
+            "openai",
+            "https://api.demonroute.com/v1",
+            "glm-5.3-flash",
+        ),
+        preset(
             "xai",
             "xAI",
             "openai",
