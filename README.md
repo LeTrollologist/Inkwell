@@ -122,7 +122,7 @@ checksums and verification commands are published with every release.
   outline with scroll-spy, reading progress, print/PDF, dark & light themes, frameless window
   with native drag and resize.
 - **Any model, your key** - OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
-  OpenRouter, xAI, Ollama, LM Studio, or any OpenAI-compatible endpoint.
+  OpenRouter, Demon Route, xAI, Ollama, LM Studio, or any OpenAI-compatible endpoint.
 - **Real streaming** - SSE parsing in Rust, token-by-token markdown rendering, a separate
   collapsible *Reasoning* channel for reasoning models, and a Stop button that interrupts a
   stalled request instead of waiting for the next token.
@@ -215,6 +215,7 @@ Outputs land in `dist\v0.3.3\`: `inkwell-v0.3.3-windows-x86_64.zip`,
 | Mistral | `openai` | `https://api.mistral.ai/v1` |
 | DeepSeek | `openai` | `https://api.deepseek.com/v1` |
 | OpenRouter | `openai` | `https://openrouter.ai/api/v1` |
+| Demon Route | `openai` | `https://api.demonroute.com/v1` |
 | xAI | `openai` | `https://api.x.ai/v1` |
 | Ollama | `openai` | `http://localhost:11434/v1` |
 | LM Studio | `openai` | `http://localhost:1234/v1` |
@@ -225,6 +226,13 @@ anything else that speaks `/chat/completions` with SSE.
 
 Preset model names are starting points and providers rename models often. Use **Fetch list**
 to see what your key can actually reach, then pick from the datalist.
+
+> **A note on Demon Route:** Demon Route is a third-party gateway, not a model vendor. If
+> you select it, your document, your prompts and your API key are sent to Demon Route and
+> handled under Demon Route's own terms. Inkwell's "no proxy" wording elsewhere in this
+> README means Inkwell itself adds no service in the loop — it does not mean a hosted
+> gateway sees nothing. If you would rather nothing leave your machine, use a local
+> provider (Ollama or LM Studio).
 
 ### Web search (optional)
 
