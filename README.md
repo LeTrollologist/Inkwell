@@ -227,12 +227,22 @@ anything else that speaks `/chat/completions` with SSE.
 Preset model names are starting points and providers rename models often. Use **Fetch list**
 to see what your key can actually reach, then pick from the datalist.
 
-> **A note on Demon Route:** Demon Route is a third-party gateway, not a model vendor. If
-> you select it, your document, your prompts and your API key are sent to Demon Route and
-> handled under Demon Route's own terms. Inkwell's "no proxy" wording elsewhere in this
-> README means Inkwell itself adds no service in the loop — it does not mean a hosted
-> gateway sees nothing. If you would rather nothing leave your machine, use a local
-> provider (Ollama or LM Studio).
+> **Third-party API providers:** Inkwell communicates directly with
+> the provider you configure. When using hosted providers or API gateways
+> such as OpenAI, Anthropic, OpenRouter, or Demon Route, your prompts,
+> document content included in requests, and API authentication credentials
+> are transmitted to that provider.
+>
+>Each provider operates independently of Inkwell and has its own privacy
+> policy, data retention practices, and terms of service. Inkwell does not
+> control how these services process transmitted data.
+>
+> API gateways may additionally route requests through other model
+> providers. Review the policies of your chosen service before sending
+> sensitive information.
+>
+> If you want to keep model processing local, use a local endpoint such
+> as Ollama or LM studio.
 
 ### Web search (optional)
 
