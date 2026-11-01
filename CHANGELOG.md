@@ -3,6 +3,26 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.4.0] - 2026-11-01
+
+### Added
+
+- **Demon Route provider preset.** The provider list now includes Demon Route
+  (`https://api.demonroute.com/v1`, `glm-5.3-flash`) using the existing OpenAI transport.
+  The README documents that it is a third-party gateway and that documents, prompts and API
+  keys are handled under its own terms. The preset test verifies unique default provider ids
+  and the expected transport, base URL and model. Fresh installs and reset settings receive
+  the preset; existing saved provider lists are intentionally unchanged.
+
+### Changed
+
+- **MSVC toolchain support.** The project scripts now detect the active Rust host and import
+  the Visual Studio `vcvars64` environment automatically for MSVC builds, while retaining
+  MinGW-w64 support for GNU builds. The README documents both paths and the Windows SDK
+  requirement.
+- Release validation now runs with the MSVC toolchain on this machine: all **73 tests** pass,
+  and the optimized MSVC executable launches successfully.
+
 ## [0.3.3] - 2026-10-31
 
 ### Improved

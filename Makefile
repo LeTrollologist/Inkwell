@@ -1,4 +1,4 @@
-TAG ?= v0.3.3
+TAG ?= v0.4.0
 PYTHON ?= python
 
 .PHONY: release draft package build test check installer clean
