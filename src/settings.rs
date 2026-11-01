@@ -169,6 +169,13 @@ pub fn default_providers() -> Vec<ProviderConfig> {
             "anthropic/claude-3.5-sonnet",
         ),
         preset(
+            "demonroute",
+            "Demon Route",
+            "openai",
+            "https://api.demonroute.com/v1",
+            "glm-5.3-flash",
+        ),
+        preset(
             "xai",
             "xAI",
             "openai",
@@ -720,6 +727,24 @@ mod tests {
         );
         let json = serde_json::to_string(&settings).unwrap();
         assert!(!json.contains("sk-legacy"));
+    }
+
+    #[test]
+    fn default_provider_ids_are_unique_and_demonroute_preset_is_wired() {
+        let providers = default_providers();
+        let mut ids: Vec<&str> = providers.iter().map(|p| p.id.as_str()).collect();
+        let total = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), total, "default provider ids must be unique");
+
+        let demonroute = providers
+            .iter()
+            .find(|p| p.id == "demonroute")
+            .expect("demonroute preset exists");
+        assert_eq!(demonroute.kind, "openai");
+        assert_eq!(demonroute.base_url, "https://api.demonroute.com/v1");
+        assert_eq!(demonroute.model, "glm-5.3-flash");
     }
 
     #[test]
