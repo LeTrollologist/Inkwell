@@ -141,8 +141,82 @@ def iscc_path():
     return None
 
 
-def mingw_env():
+def find_vcvars64():
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    vswhere = Path(program_files_x86) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    install = None
+    if vswhere.is_file():
+        result = subprocess.run(
+            [
+                str(vswhere),
+                "-latest",
+                "-products",
+                "*",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationPath",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        install = next((line.strip() for line in result.stdout.splitlines() if line.strip()), None)
+    if not install:
+        for candidate in (
+            r"C:\Program Files\Microsoft Visual Studio\2022\Community",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools",
+        ):
+            if Path(candidate).is_dir():
+                install = candidate
+                break
+    if install:
+        vcvars = Path(install) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
+        if vcvars.is_file():
+            return vcvars
+    return None
+
+
+def cargo_env():
+    """Environment for cargo: MSVC vcvars when active, else project MinGW."""
     env = os.environ.copy()
+    host = ""
+    try:
+        version = subprocess.run(
+            ["rustc", "-vV"], capture_output=True, text=True, check=False
+        )
+        host = next(
+            (line.split(":", 1)[1].strip() for line in version.stdout.splitlines()
+             if line.startswith("host:")),
+            "",
+        )
+    except OSError:
+        pass
+
+    if "windows-msvc" in host:
+        vcvars = find_vcvars64()
+        if vcvars:
+            vs_installer = Path(
+                os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+            ) / "Microsoft Visual Studio" / "Installer"
+            if (vs_installer / "vswhere.exe").is_file():
+                env["PATH"] = str(vs_installer) + os.pathsep + env.get("PATH", "")
+            result = subprocess.run(
+                f'call "{vcvars}" >nul && set',
+                shell=True,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            for line in result.stdout.splitlines():
+                if "=" in line and not line.startswith("="):
+                    key, value = line.split("=", 1)
+                    if key:
+                        env[key] = value
+            return env
+        print("  warning: MSVC toolchain selected but vcvars64.bat was not found")
+
     mingw = ROOT / "tools" / "w64devkit" / "bin"
     if (mingw / "gcc.exe").is_file():
         env["PATH"] = str(mingw) + os.pathsep + env.get("PATH", "")
@@ -230,7 +304,7 @@ def stage_preflight(publish, skip_installer, allow_dirty, version, tag):
 
 def stage_build():
     log("build", "Building the optimized release executable...")
-    run(["cargo", "build", "--release", "--locked"], env=mingw_env())
+    run(["cargo", "build", "--release", "--locked"], env=cargo_env())
     if not APP_EXE.is_file():
         fail(f"build finished but {APP_EXE} is missing")
     print(f"  {APP_EXE.name}: {APP_EXE.stat().st_size // 1024} KB")
@@ -238,7 +312,7 @@ def stage_build():
 
 def stage_test():
     log("test", "Running the Rust test suite and UI checks...")
-    run(["cargo", "test", "--locked"], env=mingw_env())
+    run(["cargo", "test", "--locked"], env=cargo_env())
     node = shutil.which("node")
     if node:
         run([node, "scripts/check-ui.js"])

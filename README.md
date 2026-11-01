@@ -147,15 +147,21 @@ source.
 - Windows 10/11 with **WebView2** (preinstalled on current Windows).
 - **Rust** stable, 1.88 or newer (wry uses edition 2024; keyring 4).
 - A Windows linker for your toolchain:
-  - MSVC toolchain: Visual Studio Build Tools with the Windows SDK.
-  - GNU toolchain: **MinGW-w64** (`x86_64-w64-mingw32-gcc`). `scripts\dev.ps1` adds a local
-    `tools\w64devkit\bin` folder to `PATH` automatically when present.
+  - **MSVC (recommended on Windows):** Visual Studio Build Tools with the **Windows 10/11 SDK**
+    installed. `scripts\_env.ps1` automatically imports `vcvars64.bat` for the project scripts.
+  - **GNU:** **MinGW-w64** (`x86_64-w64-mingw32-gcc`). The scripts prepend a local
+    `tools\w64devkit\bin` folder to `PATH` when present.
 
   `.cargo\config.toml` pins the GNU target to GCC because the LLVM linker bundled with some
   GNU toolchains miscompiles large binaries on Windows (the app dies at startup with an access
-  violation). If you switch to MSVC, the pin does not apply.
+  violation). The pin does not apply to MSVC.
 
-  On a fresh clone, install MinGW-w64 (MSYS2 is the least fussy) so
+  The `scripts\dev.ps1`, `build.ps1`, `test.ps1` and release pipeline detect whether the active
+  Rust host is MSVC or GNU and set up the corresponding environment. If you invoke `cargo`
+  directly with MSVC, use a **Developer PowerShell** or x64 Native Tools prompt so `link.exe`
+  and the Windows SDK are on `PATH`.
+
+  With the GNU toolchain, install MinGW-w64 (MSYS2 is the least fussy) so
   `x86_64-w64-mingw32-gcc` is on `PATH`. The scripts also prepend `tools\w64devkit\bin` when
   that folder exists. Note that w64devkit 2.10's GCC 16 merged `libgcc_eh` into `libgcc`;
   if the link complains about `-lgcc_eh`, create an empty archive in GCC's lib directory
