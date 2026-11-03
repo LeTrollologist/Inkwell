@@ -176,6 +176,13 @@ pub fn default_providers() -> Vec<ProviderConfig> {
             "glm-5.3-flash",
         ),
         preset(
+            "cheaperinference",
+            "Cheaper Inference",
+            "openai",
+            "https://api.cheaperinference.com/v1",
+            "gpt-5.4-mini",
+        ),
+        preset(
             "xai",
             "xAI",
             "openai",
@@ -745,6 +752,21 @@ mod tests {
         assert_eq!(demonroute.kind, "openai");
         assert_eq!(demonroute.base_url, "https://api.demonroute.com/v1");
         assert_eq!(demonroute.model, "glm-5.3-flash");
+    }
+
+    #[test]
+    fn cheaperinference_preset_is_wired() {
+        let providers = default_providers();
+        let cheaperinference = providers
+            .iter()
+            .find(|p| p.id == "cheaperinference")
+            .expect("cheaperinference preset exists");
+        assert_eq!(cheaperinference.kind, "openai");
+        assert_eq!(
+            cheaperinference.base_url,
+            "https://api.cheaperinference.com/v1"
+        );
+        assert_eq!(cheaperinference.model, "gpt-5.4-mini");
     }
 
     #[test]
