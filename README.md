@@ -236,12 +236,11 @@ Preset model names are starting points and providers rename models often. Use **
 to see what your key can actually reach, then pick from the datalist.
 
 > **Third-party API providers:** Inkwell communicates directly with
-> the provider you configure. When using hosted providers or API gateways
-> such as OpenAI, Anthropic, OpenRouter, or Demon Route, your prompts,
-> document content included in requests, and API authentication credentials
-> are transmitted to that provider.
+> the provider you configure. When using hosted providers or API gateways,
+> your prompts, document content included in requests, and API authentication
+> credentials are transmitted to that provider.
 >
->Each provider operates independently of Inkwell and has its own privacy
+> Each provider operates independently of Inkwell and has its own privacy
 > policy, data retention practices, and terms of service. Inkwell does not
 > control how these services process transmitted data.
 >

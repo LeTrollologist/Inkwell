@@ -3,6 +3,16 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.5.0] - 2026-11-03
+
+### Added
+
+- **CheaperInference provider preset.** Added CheaperInference using the existing OpenAI-compatible transport, with `https://api.cheaperinference.com/v1` and `gpt-5.4-mini` as defaults. Fresh installs and reset settings receive the preset; existing saved provider lists remain unchanged.
+
+### Changed
+
+- Updated the README's third-party API privacy disclosure to avoid maintaining a provider-specific list of gateways.
+
 ## [0.4.0] - 2026-11-01
 
 ### Added
