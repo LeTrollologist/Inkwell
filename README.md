@@ -122,7 +122,7 @@ checksums and verification commands are published with every release.
   outline with scroll-spy, reading progress, print/PDF, dark & light themes, frameless window
   with native drag and resize.
 - **Any model, your key** - OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
-  OpenRouter, Demon Route, Cheaper Inference, xAI, Ollama, LM Studio, or any OpenAI-compatible
+  OpenRouter, Demon Route, Cheaper Inference, API Route, xAI, Ollama, LM Studio, or any OpenAI-compatible
   endpoint.
 - **Real streaming** - SSE parsing in Rust, token-by-token markdown rendering, a separate
   collapsible *Reasoning* channel for reasoning models, and a Stop button that interrupts a
@@ -224,6 +224,7 @@ Outputs land in `dist\v0.4.0\`: `inkwell-v0.4.0-windows-x86_64.zip`,
 | OpenRouter | `openai` | `https://openrouter.ai/api/v1` |
 | Demon Route | `openai` | `https://api.demonroute.com/v1` |
 | Cheaper Inference | `openai` | `https://api.cheaperinference.com/v1` |
+| API Route | `openai` | `https://global.api-route.com/v1` |
 | xAI | `openai` | `https://api.x.ai/v1` |
 | Ollama | `openai` | `http://localhost:11434/v1` |
 | LM Studio | `openai` | `http://localhost:1234/v1` |

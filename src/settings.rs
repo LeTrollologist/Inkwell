@@ -183,6 +183,13 @@ pub fn default_providers() -> Vec<ProviderConfig> {
             "gpt-5.4-mini",
         ),
         preset(
+            "api-route",
+            "API Route",
+            "openai",
+            "https://global.api-route.com/v1",
+            "deepseek-v4.1-flash",
+        ),
+        preset(
             "xai",
             "xAI",
             "openai",
@@ -767,6 +774,23 @@ mod tests {
             "https://api.cheaperinference.com/v1"
         );
         assert_eq!(cheaperinference.model, "gpt-5.4-mini");
+    }
+
+    #[test]
+    fn api_route_preset_uses_remote_openai_transport_without_a_key() {
+        let settings = Settings::default();
+        let provider = settings
+            .providers
+            .iter()
+            .find(|provider| provider.id == "api-route")
+            .expect("API Route preset exists");
+        assert_eq!(provider.label, "API Route");
+        assert_eq!(provider.kind, "openai");
+        assert_eq!(provider.base_url, "https://global.api-route.com/v1");
+        assert_eq!(provider.model, "deepseek-v4.1-flash");
+        assert!(provider.api_key.is_empty());
+        assert!(!is_local_endpoint(&provider.base_url));
+        assert_eq!(settings.active_provider, "openai");
     }
 
     #[test]
