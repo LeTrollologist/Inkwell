@@ -3,6 +3,16 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.6.0] - 2026-11-08
+
+### Added
+
+- **API Route provider preset.** Added API Route using the existing OpenAI-compatible transport, with `https://global.api-route.com/v1` and `deepseek-v4.1-flash` as defaults. The preset carries no key and leaves the active provider unchanged; a regression test covers its endpoint, transport, model and empty key.
+
+### Fixed
+
+- **Relative images in documents opened without a folder path.** Documents opened through the browser file-input fallback (or restored without a saved path) previously showed a broken image for every relative reference, with no way to fix it. The renderer now reports the relative image references it could not embed, and the reader shows a notice with **Choose folder…**. The folder is read locally in the page, only files inside it that match the reported references (and pass the existing 8 MB per-image / 24 MB total / raster-only limits) are displayed, and references that climb out of the folder are never followed. References that still cannot be found are listed, so a genuine broken link is visible instead of silent. Documents opened through the native picker or drag-and-drop keep embedding images in Rust exactly as before.
+
 ## [0.5.0] - 2026-11-03
 
 ### Added
