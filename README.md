@@ -356,10 +356,13 @@ to render Markdown from the clipboard. Starting Inkwell with a file argument
   rather than injected. Link destinations are restricted to http(s), mailto and relative
   paths, and images to http(s), safe raster data URLs or local files, so `javascript:`,
   `file:` and SVG payloads cannot become active content.
-- **Local images.** Relative image paths resolve only when a document was opened with a path
-  (native picker, drag/drop or command line). The canonical file must stay inside the
+- **Local images.** Relative image paths resolve when a document was opened with a path
+  (native picker, drag/drop or command line): the canonical file must stay inside the
   document's folder, use a recognised raster format, and fit the 8 MB per-image / 24 MB total
-  budget; bytes are embedded as data URLs rather than exposed as filesystem URLs.
+  budget, and the bytes are embedded as data URLs rather than exposed as filesystem URLs.
+  When a document has no path (browser file-input fallback), the reader reports the relative
+  references and can load them from a folder you pick; that folder is read in the page, the
+  same size and format limits apply, and references that leave the folder are ignored.
 - **Keys stay in the OS keychain.** Windows Credential Manager, macOS Keychain or Linux
   Secret Service (service `app.inkwell.viewer`). The frontend only sees `hasKey` flags, and
   the Rust client reads a key at request time. `settings.json` holds no secrets; WebView state
@@ -455,9 +458,9 @@ The release pipeline runs these checks before packaging and aborts on failure; s
 
 - Inkwell is an **editor and reader**: Markdown can be edited in the source pane and saved with
   `Ctrl+S`; AI edits are only applied after you review and confirm them.
-- Relative images are embedded as data URLs and must live inside the document's folder.
-  Documents opened through the browser file-input fallback (non-Windows, or the hidden input)
-  have no filesystem path, so their relative images stay unresolved.
+- Relative images are embedded as data URLs when the document has a folder path and must live
+  inside that folder. Documents opened through the browser file-input fallback have no path, so
+  the reader asks for the document's folder the first time a relative image fails to load.
 - Embedded images are capped at 8 MB each and 24 MB per render; remote images must use `https:`.
 - Math is rendered locally with bundled KaTeX (`$…$` and `$$…$$`); unsupported TeX syntax is
   shown as an error rather than executed.

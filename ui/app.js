@@ -16,6 +16,21 @@ const LS = {
 };
 
 const MAX_DOC_BYTES = 8 * 1024 * 1024;
+/** Mirrors the renderer's per-image and total embedding budgets (markdown.rs). */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_EMBEDDED_IMAGE_BYTES = 24 * 1024 * 1024;
+
+/** Image types the renderer is willing to embed, mirrored for the folder picker. */
+const IMAGE_MIME = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  bmp: "image/bmp",
+  ico: "image/x-icon",
+};
 
 const ICONS = {
   rail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></svg>',
@@ -46,6 +61,10 @@ const state = {
   activeHeading: "",
   searchPendingKeys: new Map(),
   searchClearedKeys: new Set(),
+  missingImages: [],
+  resolvedImages: new Map(),
+  imageScope: "",
+  imagesDismissed: false,
 };
 
 if (state.chatMode === "search") state.chatMode = "fetch";
@@ -303,6 +322,11 @@ function showEmpty() {
   state.savedContent = "";
   state.dirty = false;
   state.raw = "";
+  state.missingImages = [];
+  state.resolvedImages = new Map();
+  state.imageScope = "";
+  state.imagesDismissed = false;
+  $("imageWarning").hidden = true;
   $("doc").hidden = true;
   $("editorShell").hidden = true;
   $("empty").hidden = false;
@@ -340,6 +364,15 @@ async function setDocument(name, content, options = {}) {
     return;
   }
 
+  // Images resolved from a picked folder belong to one document; a different
+  // document starts with an empty cache.
+  const imageScope = `${name || "untitled.md"}\u0000${options.path || ""}`;
+  if (state.imageScope !== imageScope) {
+    state.imageScope = imageScope;
+    state.resolvedImages = new Map();
+    state.imagesDismissed = false;
+  }
+
   const doc = {
     name: name || "untitled.md",
     content,
@@ -362,6 +395,11 @@ async function setDocument(name, content, options = {}) {
   renderSelectionChip();
 
   $("doc").innerHTML = rendered.html;
+  state.missingImages = Array.isArray(rendered.unresolvedImages)
+    ? rendered.unresolvedImages.filter((ref) => !state.resolvedImages.has(ref))
+    : [];
+  applyResolvedImages();
+  refreshImageWarning();
   enhanceMarkdown($("doc"));
   $("source").value = content;
 
@@ -616,6 +654,154 @@ async function pickFile() {
       return;
     }
     toast(message, "error");
+  }
+}
+
+/* ------------------------------------------------- relative document images */
+
+/*
+ * A document opened through the browser file-input fallback has no filesystem
+ * path, so the Rust renderer cannot follow its relative image references. The
+ * renderer reports those references instead of dropping them, and the reader
+ * lets the user point at the document's folder. Files are read in the page and
+ * become data URLs, which keeps the whole feature local: nothing is uploaded
+ * and only files inside the folder the user picked can be used.
+ */
+
+/** Normalises a Markdown image reference to a folder-relative lookup key. */
+function normaliseImagePath(reference) {
+  const trimmed = String(reference || "").trim();
+  if (!trimmed) return null;
+  const withoutSuffix = trimmed.split(/[?#]/)[0];
+  let decoded = withoutSuffix;
+  try {
+    decoded = decodeURIComponent(withoutSuffix);
+  } catch {
+    /* not valid percent-encoding: match the raw reference instead */
+  }
+  const parts = [];
+  for (const part of decoded.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    // A reference that climbs out of the chosen folder is never resolved.
+    if (part === "..") return null;
+    parts.push(part.toLowerCase());
+  }
+  return parts.join("/");
+}
+
+/** Key for a file from a directory input, relative to the picked folder. */
+function folderRelativePath(file) {
+  const relative = file.webkitRelativePath || "";
+  const cut = relative.indexOf("/");
+  const withoutRoot = cut === -1 ? file.name : relative.slice(cut + 1);
+  return normaliseImagePath(withoutRoot);
+}
+
+function imageMimeFor(file) {
+  const name = String(file.name || "");
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  return IMAGE_MIME[extension] || IMAGE_MIME[file.type?.split("/").pop()?.toLowerCase()] || null;
+}
+
+function readImageDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("could not read the file"));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string" || !result.includes(",")) {
+        reject(new Error("unexpected file contents"));
+        return;
+      }
+      const payload = result.slice(result.indexOf(",") + 1);
+      resolve(`data:${imageMimeFor(file)};base64,${payload}`);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function applyResolvedImages() {
+  if (!state.resolvedImages.size) return;
+  for (const img of $("doc").querySelectorAll("img")) {
+    const resolved = state.resolvedImages.get(img.getAttribute("src"));
+    if (resolved) img.setAttribute("src", resolved);
+  }
+}
+
+function refreshImageWarning() {
+  const el = $("imageWarning");
+  if (!el) return;
+  const missing = state.missingImages || [];
+  if (!missing.length || state.imagesDismissed) {
+    el.hidden = true;
+    return;
+  }
+  const count = missing.length;
+  const noun = count === 1 ? "image" : "images";
+  const them = count === 1 ? "it" : "them";
+  const reason = state.doc?.path
+    ? `${count} relative ${noun} could not be loaded from the document folder.`
+    : `${count} relative ${noun} could not be loaded because this document was opened without a folder path.`;
+  $("imageWarningText").textContent =
+    `${reason} Choose the folder that contains ${them} to load ${them} here.`;
+  el.hidden = false;
+}
+
+async function resolveImagesFromFolder(fileList) {
+  const files = Array.from(fileList || []);
+  const missing = state.missingImages || [];
+  if (!files.length || !missing.length) return;
+
+  const index = new Map();
+  for (const file of files) {
+    const key = folderRelativePath(file);
+    if (key && !index.has(key)) index.set(key, file);
+  }
+
+  const stillMissing = [];
+  let loaded = 0;
+  let total = 0;
+  const doc = $("doc");
+
+  for (const reference of missing) {
+    const key = normaliseImagePath(reference);
+    const file = key ? index.get(key) : null;
+    const tooLarge =
+      !file ||
+      !imageMimeFor(file) ||
+      file.size === 0 ||
+      file.size > MAX_IMAGE_BYTES ||
+      total + file.size > MAX_EMBEDDED_IMAGE_BYTES;
+    if (tooLarge) {
+      stillMissing.push(reference);
+      continue;
+    }
+    try {
+      const url = await readImageDataUrl(file);
+      total += file.size;
+      loaded += 1;
+      state.resolvedImages.set(reference, url);
+      for (const img of doc.querySelectorAll("img")) {
+        if (img.getAttribute("src") === reference) img.setAttribute("src", url);
+      }
+    } catch {
+      stillMissing.push(reference);
+    }
+  }
+
+  state.missingImages = stillMissing;
+  state.imagesDismissed = stillMissing.length === 0;
+  refreshImageWarning();
+
+  if (!stillMissing.length) {
+    toast(`Loaded ${loaded} image${loaded === 1 ? "" : "s"} from the folder.`);
+  } else if (loaded) {
+    toast(
+      `Loaded ${loaded} image${loaded === 1 ? "" : "s"}; ${stillMissing.length} still missing.`,
+      "error"
+    );
+  } else {
+    toast("None of the missing images were found in that folder.", "error");
   }
 }
 
@@ -2193,6 +2379,17 @@ function wireEvents() {
   $("fileInput").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) openFile(file);
+  });
+  $("imageFolderBtn").addEventListener("click", () => {
+    $("imageFolderInput").value = "";
+    $("imageFolderInput").click();
+  });
+  $("imageFolderInput").addEventListener("change", (event) => {
+    resolveImagesFromFolder(event.target.files);
+  });
+  $("imageWarningDismiss").addEventListener("click", () => {
+    state.imagesDismissed = true;
+    refreshImageWarning();
   });
   $("source").addEventListener("input", () => {
     if (!state.doc) return;

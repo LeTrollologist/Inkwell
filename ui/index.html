@@ -122,6 +122,15 @@
             </div>
           </section>
 
+          <div class="doc-warning" id="imageWarning" role="status" hidden>
+            <span class="doc-warning-text" id="imageWarningText"></span>
+            <span class="doc-warning-actions">
+              <button class="ghost-btn tiny" id="imageFolderBtn">Choose folder…</button>
+              <button class="ghost-btn tiny" id="imageWarningDismiss">Dismiss</button>
+            </span>
+            <input type="file" id="imageFolderInput" webkitdirectory directory multiple hidden />
+          </div>
+
           <article class="markdown" id="doc" hidden></article>
           <div class="editor-shell" id="editorShell" hidden>
             <div class="editor-bar">

@@ -710,6 +710,44 @@ html[data-theme="light"] .titlebar {
   pointer-events: none;
 }
 
+/* Explains relative images the reader could not load (for example a document
+   opened through the browser file-input fallback, which has no folder path). */
+.doc-warning {
+  position: sticky;
+  top: 2px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 16px 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fcd34d;
+  font-size: 11.5px;
+  line-height: 1.5;
+  backdrop-filter: blur(8px);
+}
+
+.doc-warning-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-warning-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+html[data-theme="light"] .doc-warning {
+  border-color: rgba(180, 83, 9, 0.25);
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+}
+
 .progress-bar {
   height: 100%;
   width: 0;

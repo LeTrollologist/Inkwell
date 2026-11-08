@@ -30,6 +30,10 @@ pub struct Rendered {
     pub title: Option<String>,
     pub front_matter: Option<String>,
     pub truncated: bool,
+    /// Relative image references that could not be embedded, in document order.
+    /// The page keeps the original `src` for these so a document opened without
+    /// a folder path can still resolve them from a folder the user picks.
+    pub unresolved_images: Vec<String>,
 }
 
 const MAX_INPUT_BYTES: usize = 8 * 1024 * 1024;
@@ -220,18 +224,32 @@ fn embed_relative_image(dest: &str, base: &Path, total: &mut usize) -> Option<St
     Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
 }
 
-fn sanitize_image(dest: &str, base: Option<&Path>, total: &mut usize) -> String {
+fn sanitize_image(
+    dest: &str,
+    base: Option<&Path>,
+    total: &mut usize,
+    unresolved: &mut Vec<String>,
+) -> String {
     let url = dest.trim();
     if url.is_empty() || url.contains('\0') {
         return BLOCKED_IMAGE.to_string();
     }
 
-    if let Some(base) = base {
-        if scheme_of(url).is_none() && !url.starts_with('/') && !url.starts_with('\\') {
+    if scheme_of(url).is_none()
+        && !url.starts_with('/')
+        && !url.starts_with('\\')
+        && !url.starts_with("//")
+    {
+        if let Some(base) = base {
             if let Some(data) = embed_relative_image(url, base, total) {
                 return data;
             }
         }
+        // Not embedded (no base folder, missing file, unsupported type or over
+        // the size budget). Keep the reference so the page can report it and,
+        // when the document was opened without a path, resolve it later.
+        unresolved.push(url.to_string());
+        return url.to_string();
     }
 
     match scheme_of(url).as_deref() {
@@ -312,6 +330,7 @@ pub fn render_with(source: &str, base_dir: Option<&Path>) -> Rendered {
     // Pass 2 - HTML, with anchor ids, raw HTML neutralised and URLs sanitised.
     let mut cursor = 0usize;
     let mut embedded_total = 0usize;
+    let mut unresolved_images: Vec<String> = Vec::new();
     let mut events: Vec<Event> = Vec::new();
     for event in Parser::new_ext(&body, opts) {
         match event {
@@ -338,7 +357,13 @@ pub fn render_with(source: &str, base_dir: Option<&Path>) -> Rendered {
             }) => {
                 events.push(Event::Start(Tag::Image {
                     link_type,
-                    dest_url: sanitize_image(&dest_url, base_dir, &mut embedded_total).into(),
+                    dest_url: sanitize_image(
+                        &dest_url,
+                        base_dir,
+                        &mut embedded_total,
+                        &mut unresolved_images,
+                    )
+                    .into(),
                     title,
                     id,
                 }));
@@ -387,6 +412,9 @@ pub fn render_with(source: &str, base_dir: Option<&Path>) -> Rendered {
                 .map(|item| item.text.clone())
         });
 
+    unresolved_images.sort();
+    unresolved_images.dedup();
+
     Rendered {
         html: html_out,
         outline: headings
@@ -397,6 +425,7 @@ pub fn render_with(source: &str, base_dir: Option<&Path>) -> Rendered {
         title,
         front_matter,
         truncated,
+        unresolved_images,
     }
 }
 
@@ -587,6 +616,35 @@ mod tests {
         std::fs::write(dir.join("notes.txt"), b"hello").unwrap();
         let rendered = render_with("![a](missing.png) ![b](notes.txt)", Some(&dir));
         assert!(!rendered.html.contains("data:image/"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unresolved_relative_images_are_reported_in_document_order() {
+        // No folder path (file-input fallback): references stay relative, and
+        // the page is told about each one exactly once.
+        let rendered = render("![a](images/a.png)\n\n![b](./b%20c.png)\n\n![again](images/a.png)");
+        assert_eq!(
+            rendered.unresolved_images,
+            vec!["./b%20c.png".to_string(), "images/a.png".to_string()]
+        );
+        assert!(rendered.html.contains("src=\"images/a.png\""));
+        assert!(rendered.html.contains("src=\"./b%20c.png\""));
+    }
+
+    #[test]
+    fn embedded_and_remote_images_are_not_reported_as_unresolved() {
+        let dir = temp_dir("reported");
+        std::fs::write(dir.join("pic.png"), b"not-a-real-png").unwrap();
+        let rendered = render_with(
+            "![ok](pic.png) ![gone](nope.png) ![up](../secret.png) \
+             ![web](https://example.com/x.png) ![cdn](//cdn.example.com/y.png)",
+            Some(&dir),
+        );
+        assert_eq!(
+            rendered.unresolved_images,
+            vec!["../secret.png".to_string(), "nope.png".to_string()]
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
