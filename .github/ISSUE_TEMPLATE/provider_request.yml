@@ -1,0 +1,111 @@
+name: Provider / Gateway Request
+description: Propose adding an AI provider or API gateway to Inkwell.
+title: "[Provider Request]: "
+labels:
+  - provider-request
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Provider integration proposal
+
+        Use this form to propose a new provider or API gateway.
+
+        Submitting a proposal does not guarantee inclusion.
+        All integrations require maintainer approval before implementation.
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider name
+      placeholder: Provider or gateway name
+    validations:
+      required: true
+
+  - type: input
+    id: website
+    attributes:
+      label: Official website
+      placeholder: https://example.com
+    validations:
+      required: true
+
+  - type: input
+    id: documentation
+    attributes:
+      label: API documentation
+      placeholder: https://docs.example.com
+    validations:
+      required: true
+
+  - type: input
+    id: endpoint
+    attributes:
+      label: API base URL
+      placeholder: https://api.example.com/v1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: API compatibility
+      options:
+        - OpenAI-compatible
+        - Anthropic-compatible
+        - Google Gemini
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Suggested default model
+      description: Include a valid model identifier.
+      placeholder: example-model
+    validations:
+      required: true
+
+  - type: textarea
+    id: authentication
+    attributes:
+      label: Authentication requirements
+      description: Explain API key requirements, headers, or other authentication behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Why should Inkwell include this provider?
+      description: Explain its practical value and what differentiates it from existing options.
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility considerations
+      description: Describe streaming, reasoning support, request formats, and known limitations.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: Disclosure
+      options:
+        - label: I am affiliated with, employed by, or otherwise have a commercial interest in this provider.
+          required: false
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Acknowledgment
+      options:
+        - label: I understand that provider additions are subject to maintainer approval and are not guaranteed.
+          required: true
+        - label: I have provided official documentation rather than relying solely on marketing material.
+          required: true
