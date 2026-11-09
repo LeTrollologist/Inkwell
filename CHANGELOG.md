@@ -3,6 +3,22 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [1.0.0-rc] - 2026-11-09
+
+Release candidate for 1.0, focused on editing and platform parity.
+
+### Added
+
+- **Split editor with live preview (#15).** A third view mode shows the Markdown source and the rendered document side by side. The preview re-renders as you type (debounced, race-safe), and the outline, reading progress, word count, unsaved marker and relative images follow the buffer. Toggle it from the new title-bar button or `Ctrl+Shift+U`; `Ctrl+U` keeps the full-window source editor.
+- **Editing that stays out of the way.** `Tab` indents by two spaces and `Shift+Tab` outdents the current line instead of moving focus, the editor remembers unsaved buffers when you switch views, and editing continues to work with no provider configured.
+- **Native file dialogs on macOS and Linux (#17).** The open and save dialogs now use `osascript` on macOS and `zenity`/`kdialog` on Linux, returning real filesystem paths so relative images and Save-as behave like the Win32 dialogs. The in-window file picker remains the fallback when no helper is installed.
+- **Consistent drag-and-drop.** The window now highlights the drop target while a native drag is over it, explains when a dragged file is not Markdown instead of silently ignoring it, and says when extra documents were ignored. Paths come from the OS on every platform.
+
+### Changed
+
+- README documents the three editor views, the new shortcuts and per-platform dialog support.
+- `scripts/check-ui.js` still guards the shell; the release pipeline is unchanged.
+
 ## [0.7.0] - 2026-11-09
 
 ### Added
