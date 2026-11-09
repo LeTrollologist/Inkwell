@@ -236,6 +236,24 @@ anything else that speaks `/chat/completions` with SSE.
 Preset model names are starting points and providers rename models often. Use **Fetch list**
 to see what your key can actually reach, then pick from the datalist.
 
+### Provider capabilities
+
+Presets share a transport, but they do not support the same features. The settings dialog shows
+a capability summary for the selected provider and updates it as you edit the model or base URL:
+
+| Capability | Supported when |
+| --- | --- |
+| **Streaming** | Always - every transport streams over SSE. |
+| **Model list** | The provider has a base URL. Without one, **Fetch list** is disabled. |
+| **Reasoning** | OpenAI-compatible endpoints: only for reasoning models (`o1`, `o3`, `o4`, `gpt-5…`) or through OpenRouter. Anthropic and Gemini: the fields are sent, but only models with extended-thinking support use them. Otherwise the toggle is disabled and the hint explains why. |
+| **Web search tools** | Always - native tool calls are offered on every transport, and the planner falls back to JSON planning when a provider rejects them. |
+
+Capabilities are not just documentation: Inkwell disables **Fetch list** when it cannot work,
+disables the reasoning toggle with an inline reason when the selected model ignores reasoning
+entirely, marks reasoning as model-dependent where the model decides, and adds a short notice to
+the answer when a saved reasoning preference cannot be applied. Nothing is sent that the selected
+provider and model cannot accept.
+
 > **Third-party API providers:** Inkwell communicates directly with
 > the provider you configure. When using hosted providers or API gateways,
 > your prompts, document content included in requests, and API authentication
@@ -329,6 +347,8 @@ Use the selector in the chat composer:
 - **Thinking** — enable *Request reasoning / extended thinking* in Settings to ask supported
   OpenAI reasoning models, Anthropic extended thinking, Gemini thinking and OpenRouter
   reasoning for a reasoning pass. Streamed reasoning appears in the collapsible channel.
+  Settings shows whether the selected provider and model can use it; when they cannot, the
+  toggle is disabled and the answer says reasoning was left out.
 
 ## Keyboard shortcuts
 

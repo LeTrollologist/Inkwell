@@ -277,6 +277,112 @@ pub struct ProviderView {
     pub base_url: String,
     pub model: String,
     pub has_key: bool,
+    /// What the Co-Pilot can actually do with this provider and model.
+    pub capabilities: ProviderCapabilities,
+}
+
+/// How well a provider can honour a reasoning request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReasoningSupport {
+    /// Reasoning is requested and the model is known to accept it.
+    Supported,
+    /// The request can carry reasoning fields, but whether they apply depends
+    /// on the model (Anthropic and Gemini accept the fields for the models that
+    /// support extended thinking).
+    ModelDependent,
+    /// The request never enables reasoning for this configuration.
+    Unsupported,
+}
+
+/// Feature support for one Co-Pilot configuration.
+///
+/// Presets map onto a transport family, but the individual features are not
+/// identical: model discovery needs a base URL, reasoning depends on both the
+/// transport and the selected model, and native tool calls are offered on every
+/// bundled transport (the web-search planner falls back to JSON planning when a
+/// provider rejects them). The settings view exposes this so the UI can avoid
+/// offering controls the selected configuration would ignore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCapabilities {
+    /// Token-by-token streaming responses.
+    pub streaming: bool,
+    /// `GET /models` style discovery, behind the "Fetch list" button.
+    pub model_discovery: bool,
+    /// Whether reasoning / extended-thinking controls apply.
+    pub reasoning: ReasoningSupport,
+    /// Why reasoning is unavailable or only model-dependent, when relevant.
+    pub reasoning_note: Option<String>,
+    /// Native tool calls for the web-search planner.
+    pub tool_calling: bool,
+}
+
+impl ProviderCapabilities {
+    pub fn for_config(provider: &ProviderConfig) -> Self {
+        Self::for_parts(&provider.kind, &provider.model, &provider.base_url)
+    }
+
+    /// Computes capabilities from the parts the settings form can edit, so the
+    /// UI can refresh them before a save.
+    pub fn for_parts(kind: &str, model: &str, base_url: &str) -> Self {
+        let kind = kind.trim().to_ascii_lowercase();
+        let model = model.trim();
+        let base = base_url.trim();
+
+        // Unknown kinds use the OpenAI-compatible branch, so they are treated
+        // like one rather than as "no support at all".
+        let anthropic_or_gemini = matches!(kind.as_str(), "anthropic" | "gemini");
+        let reasoning_effort = base.contains("openrouter.ai");
+
+        let (reasoning, reasoning_note) = if anthropic_or_gemini {
+            (
+                ReasoningSupport::ModelDependent,
+                Some(
+                    "The reasoning fields are sent, but only models with extended thinking \
+                     support use them."
+                        .to_string(),
+                ),
+            )
+        } else if reasoning_effort {
+            (ReasoningSupport::Supported, None)
+        } else if model.is_empty() {
+            (
+                ReasoningSupport::Unsupported,
+                Some("Choose a model first; reasoning support depends on it.".to_string()),
+            )
+        } else if is_reasoning_model(model) {
+            (ReasoningSupport::Supported, None)
+        } else {
+            (
+                ReasoningSupport::Unsupported,
+                Some(format!(
+                    "{model} does not accept reasoning controls, so the request leaves them out."
+                )),
+            )
+        };
+
+        Self {
+            // Every transport streams; unknown kinds fall back to the
+            // OpenAI-compatible branch, which also streams.
+            streaming: true,
+            model_discovery: !base.is_empty(),
+            reasoning,
+            reasoning_note,
+            tool_calling: true,
+        }
+    }
+}
+
+/// True for OpenAI reasoning models (`o1`, `o3`, `o4`, `gpt-5…`), which take
+/// `max_completion_tokens`/`reasoning_effort` instead of the classic sampling
+/// parameters.
+pub fn is_reasoning_model(model: &str) -> bool {
+    let model = model.to_ascii_lowercase();
+    model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+        || model.starts_with("gpt-5")
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -328,6 +434,7 @@ impl Settings {
                     base_url: p.base_url.clone(),
                     model: p.model.clone(),
                     has_key: credentials.has(&p.id),
+                    capabilities: ProviderCapabilities::for_config(p),
                 })
                 .collect(),
             temperature: self.temperature,
@@ -798,5 +905,117 @@ mod tests {
         assert!(is_local_endpoint("http://localhost:11434/v1"));
         assert!(is_local_endpoint("http://127.0.0.1:1234/v1"));
         assert!(!is_local_endpoint("https://api.openai.com/v1"));
+    }
+
+    #[test]
+    fn capabilities_track_the_transport_and_the_model() {
+        let anthropic = ProviderCapabilities::for_parts(
+            "anthropic",
+            "claude-3-5-sonnet-latest",
+            "https://api.anthropic.com",
+        );
+        assert!(anthropic.streaming);
+        assert!(anthropic.model_discovery);
+        assert!(anthropic.tool_calling);
+        assert_eq!(anthropic.reasoning, ReasoningSupport::ModelDependent);
+        assert!(anthropic.reasoning_note.is_some());
+
+        let gemini = ProviderCapabilities::for_parts(
+            "gemini",
+            "gemini-2.0-flash",
+            "https://generativelanguage.googleapis.com",
+        );
+        assert_eq!(gemini.reasoning, ReasoningSupport::ModelDependent);
+
+        // An OpenAI-compatible transport without a reasoning model ignores the
+        // thinking toggle, and says so.
+        let plain =
+            ProviderCapabilities::for_parts("openai", "gpt-4o-mini", "https://api.openai.com/v1");
+        assert_eq!(plain.reasoning, ReasoningSupport::Unsupported);
+        assert!(plain
+            .reasoning_note
+            .as_deref()
+            .unwrap()
+            .contains("gpt-4o-mini"));
+
+        let reasoning_model =
+            ProviderCapabilities::for_parts("openai", "gpt-5.4-mini", "https://api.openai.com/v1");
+        assert_eq!(reasoning_model.reasoning, ReasoningSupport::Supported);
+        assert_eq!(reasoning_model.reasoning_note, None);
+
+        // OpenRouter forwards reasoning_effort for any model it hosts.
+        let openrouter = ProviderCapabilities::for_parts(
+            "openai",
+            "mistral-large-latest",
+            "https://openrouter.ai/api/v1",
+        );
+        assert_eq!(openrouter.reasoning, ReasoningSupport::Supported);
+        assert_eq!(openrouter.reasoning_note, None);
+
+        // Model discovery needs somewhere to ask.
+        let no_endpoint = ProviderCapabilities::for_parts("openai", "gpt-4o-mini", "  ");
+        assert!(!no_endpoint.model_discovery);
+
+        let no_model = ProviderCapabilities::for_parts("openai", "", "https://api.openai.com/v1");
+        assert_eq!(no_model.reasoning, ReasoningSupport::Unsupported);
+        assert!(no_model
+            .reasoning_note
+            .as_deref()
+            .unwrap()
+            .contains("Choose a model"));
+    }
+
+    #[test]
+    fn unknown_transports_behave_like_the_openai_family() {
+        let caps = ProviderCapabilities::for_parts(
+            "some-new-gateway",
+            "gpt-5.4-mini",
+            "https://gateway.example/v1",
+        );
+        assert!(caps.streaming);
+        assert!(caps.model_discovery);
+        assert!(caps.tool_calling);
+        assert_eq!(caps.reasoning, ReasoningSupport::Supported);
+    }
+
+    #[test]
+    fn every_default_preset_reports_capabilities() {
+        let credentials = Credentials::memory_only();
+        let view = Settings::default().view(&credentials);
+        assert_eq!(view.providers.len(), default_providers().len());
+        for provider in &view.providers {
+            assert!(provider.capabilities.streaming, "{}", provider.id);
+            assert!(provider.capabilities.tool_calling, "{}", provider.id);
+            if provider.id == "custom" {
+                // No default endpoint yet, so there is nothing to ask for models.
+                assert!(!provider.capabilities.model_discovery);
+            } else {
+                assert!(provider.capabilities.model_discovery, "{}", provider.id);
+            }
+        }
+        let openai = view
+            .providers
+            .iter()
+            .find(|provider| provider.id == "openai")
+            .unwrap();
+        assert_eq!(
+            openai.capabilities.reasoning,
+            ReasoningSupport::Unsupported,
+            "gpt-4o-mini does not take reasoning controls"
+        );
+        let anthropic = view
+            .providers
+            .iter()
+            .find(|provider| provider.id == "anthropic")
+            .unwrap();
+        assert_eq!(
+            anthropic.capabilities.reasoning,
+            ReasoningSupport::ModelDependent
+        );
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("\"capabilities\":{"));
+        assert!(json.contains("\"modelDiscovery\":true"));
+        assert!(json.contains("\"reasoning\":\"modelDependent\""));
+        assert!(json.contains("\"reasoning\":\"unsupported\""));
     }
 }

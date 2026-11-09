@@ -269,6 +269,8 @@
             <select id="providerSelect"></select>
           </label>
 
+          <div class="capability-list" id="providerCapabilities" aria-live="polite"></div>
+
           <label class="field">
             <span class="field-label">Model</span>
             <div class="input-row">
@@ -318,9 +320,9 @@
             <input type="checkbox" id="thinkingInput" />
             <span>Request reasoning / extended thinking when supported</span>
           </label>
-          <small class="field-hint">
+          <small class="field-hint" id="thinkingHint">
             Applies to OpenAI reasoning models, Anthropic extended thinking, Gemini thinking and
-            OpenRouter reasoning. Other providers may ignore it.
+            OpenRouter reasoning.
           </small>
 
           <div class="settings-section">

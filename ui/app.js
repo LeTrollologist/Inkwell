@@ -65,6 +65,7 @@ const state = {
   resolvedImages: new Map(),
   imageScope: "",
   imagesDismissed: false,
+  reasoningNotices: new Set(),
 };
 
 if (state.chatMode === "search") state.chatMode = "fetch";
@@ -146,6 +147,134 @@ function syncProviderUI() {
   $("chatDot").classList.toggle("on", ready);
   $("chatDot").title = ready ? "Provider ready" : "Provider needs an API key";
   if (state.doc) $("docChip").hidden = false;
+}
+
+/* ------------------------------------------------- provider capabilities */
+
+/*
+ * Presets share a transport but not the same feature set: model discovery needs
+ * an endpoint, reasoning depends on the model, and tool calls can be rejected by
+ * a gateway. Rust owns those rules (settings::ProviderCapabilities) and the
+ * settings form only renders them, so the UI never offers a control the selected
+ * configuration would ignore.
+ */
+
+const CAPABILITY_LABELS = {
+  streaming: "Streaming",
+  modelDiscovery: "Model list",
+  reasoning: "Reasoning",
+  toolCalling: "Web search tools",
+};
+
+const THINKING_HINT =
+  "Applies to OpenAI reasoning models, Anthropic extended thinking, Gemini thinking and OpenRouter reasoning.";
+
+function capabilityNote(key, capabilities) {
+  if (key === "reasoning") {
+    if (capabilities.reasoning === "supported") return "";
+    return capabilities.reasoningNote || "Reasoning depends on the selected model.";
+  }
+  if (capabilities[key]) {
+    return key === "toolCalling"
+      ? "Native tool calls; JSON planning is used when a provider rejects them."
+      : "";
+  }
+  if (key === "modelDiscovery") {
+    return "Add a base URL, then this provider's models can be listed.";
+  }
+  return "Not available for this configuration.";
+}
+
+function capabilityState(key, capabilities) {
+  if (key === "reasoning") {
+    if (capabilities.reasoning === "unsupported") return "off";
+    if (capabilities.reasoning === "modelDependent") return "partial";
+    return "on";
+  }
+  return capabilities[key] === false ? "off" : "on";
+}
+
+function renderProviderCapabilities(capabilities) {
+  const host = $("providerCapabilities");
+  host.textContent = "";
+  if (!capabilities) return;
+  Object.keys(CAPABILITY_LABELS).forEach((key) => {
+    const variant = capabilityState(key, capabilities);
+    const chip = document.createElement("span");
+    chip.className = `capability ${variant}`;
+    chip.textContent = CAPABILITY_LABELS[key];
+    const note = capabilityNote(key, capabilities);
+    if (note) chip.title = note;
+    host.appendChild(chip);
+  });
+}
+
+function applyProviderCapabilities(capabilities) {
+  if (!capabilities) return;
+  renderProviderCapabilities(capabilities);
+
+  const fetchButton = $("fetchModels");
+  const canListModels = capabilities.modelDiscovery !== false;
+  fetchButton.disabled = !canListModels;
+  fetchButton.title = canListModels
+    ? ""
+    : "This endpoint has no base URL, so its models cannot be listed.";
+
+  const thinking = $("thinkingInput");
+  const hint = $("thinkingHint");
+  const support = capabilities.reasoning || "unsupported";
+  const note = capabilities.reasoningNote || "";
+  thinking.disabled = support === "unsupported";
+  hint.classList.remove("hint-warning");
+  if (support === "supported") {
+    thinking.title = "";
+    hint.textContent = THINKING_HINT;
+  } else if (support === "modelDependent") {
+    thinking.title = note;
+    hint.textContent = note || "Sent for models that support extended thinking.";
+  } else {
+    thinking.title = note;
+    hint.textContent = `Not sent for this provider and model. ${note}`.trim();
+    hint.classList.add("hint-warning");
+  }
+}
+
+let capabilityTimer = 0;
+
+/** Recomputes capabilities for unsaved edits to the model or base URL. */
+function refreshFormCapabilities() {
+  clearTimeout(capabilityTimer);
+  capabilityTimer = setTimeout(async () => {
+    const provider = currentFormProvider();
+    if (!provider) return;
+    try {
+      const capabilities = await invoke("provider_capabilities", {
+        kind: provider.kind,
+        model: $("modelInput").value.trim(),
+        baseUrl: $("baseUrlInput").value.trim(),
+      });
+      applyProviderCapabilities(capabilities);
+    } catch {
+      /* the capability preview is best-effort */
+    }
+  }, 180);
+}
+
+/**
+ * Explains, once per provider/model, why a request would leave reasoning out.
+ * Returns an empty string when reasoning is supported or not requested.
+ */
+function reasoningUnavailableNotice(provider) {
+  const capabilities = provider?.capabilities;
+  if (!capabilities || capabilities.reasoning !== "unsupported" || !state.settings?.thinking) {
+    return "";
+  }
+  const scope = `${provider.id}\u0000${provider.model}`;
+  if (state.reasoningNotices.has(scope)) return "";
+  state.reasoningNotices.add(scope);
+  return `Reasoning was not requested: ${
+    capabilities.reasoningNote || "this model does not accept reasoning controls."
+  }`;
 }
 
 /* ---------------------------------------------------------------- settings */
@@ -1572,6 +1701,14 @@ async function sendMessage(override) {
   $("messages").appendChild(node.root);
   if (chatEmptyEl) chatEmptyEl.hidden = true;
 
+  const reasoningNotice = reasoningUnavailableNotice(provider);
+  if (reasoningNotice) {
+    const box = document.createElement("div");
+    box.className = "chat-notice";
+    box.textContent = reasoningNotice;
+    node.root.insertBefore(box, node.root.querySelector(".msg-meta"));
+  }
+
   const id =
     window.crypto && crypto.randomUUID
       ? crypto.randomUUID()
@@ -1825,6 +1962,7 @@ function loadProviderIntoForm(id) {
     : available
       ? `Stored in ${backend}.`
       : "Session only — the system credential store is unavailable.";
+  applyProviderCapabilities(provider.capabilities);
 }
 
 let formSearchProviderId = null;
@@ -2431,6 +2569,8 @@ function wireEvents() {
     if (formProviderId) captureFormIntoSettings();
     loadProviderIntoForm(event.target.value);
   });
+  $("modelInput").addEventListener("input", refreshFormCapabilities);
+  $("baseUrlInput").addEventListener("input", refreshFormCapabilities);
   $("keyInput").addEventListener("input", () => {
     const provider = currentFormProvider();
     if (!provider) return;

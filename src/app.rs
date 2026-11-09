@@ -551,6 +551,25 @@ fn dispatch(
             }
             Some(Ok(json!(cancelled)))
         }
+        // Lets the settings form preview the capabilities of edits that are not
+        // saved yet (changing the model or base URL changes what is supported).
+        "provider_capabilities" => {
+            let kind = args.get("kind").and_then(Value::as_str).unwrap_or_default();
+            let model = args
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let base_url = args
+                .get("baseUrl")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            Some(
+                serde_json::to_value(settings::ProviderCapabilities::for_parts(
+                    kind, model, base_url,
+                ))
+                .map_err(|err| err.to_string()),
+            )
+        }
         "list_models" => {
             let provider_id = args
                 .get("providerId")

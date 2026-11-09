@@ -16,7 +16,9 @@ use serde_json::{json, Value};
 use crate::app::Emitter;
 use crate::fetch::FetchHit;
 use crate::search::{self, SearchError, WebSearchHit};
-use crate::settings::{is_local_endpoint, ProviderConfig, DEFAULT_SYSTEM_PROMPT};
+use crate::settings::{
+    is_local_endpoint, is_reasoning_model, ProviderConfig, DEFAULT_SYSTEM_PROMPT,
+};
 
 /// Roughly 30k tokens of document context.
 pub const MAX_DOC_CHARS: usize = 120_000;
@@ -370,14 +372,6 @@ fn text_of(value: &Value) -> Option<String> {
         }
         _ => None,
     }
-}
-
-fn is_reasoning_model(model: &str) -> bool {
-    let model = model.to_ascii_lowercase();
-    model.starts_with("o1")
-        || model.starts_with("o3")
-        || model.starts_with("o4")
-        || model.starts_with("gpt-5")
 }
 
 pub fn build_request(
