@@ -3,6 +3,19 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
+## [0.7.0] - 2026-11-09
+
+### Added
+
+- **Provider capability reporting in the Co-Pilot (#20).** Settings now shows what the selected provider and model actually support — streaming, model discovery, reasoning and native web-search tool calls — and recomputes the summary as you edit the model or base URL. The rules live in Rust (`settings::ProviderCapabilities`) and every provider in the settings view carries its capabilities, so the UI and the request builder share one definition.
+- **Unsupported options are no longer offered blindly.** **Fetch list** is disabled when the provider has no base URL to ask, and the reasoning toggle is disabled with an inline reason when the chosen model ignores reasoning controls.
+- **Clear feedback when a saved preference cannot apply.** If reasoning is enabled but the active provider and model cannot use it, the answer starts with a short notice explaining that reasoning was left out (shown once per provider and model).
+- New `provider_capabilities` IPC command, so the settings form can preview capabilities for unsaved edits without persisting them.
+
+### Changed
+
+- `is_reasoning_model` now lives in `settings`, so the capability metadata and the OpenAI request builder cannot drift apart.
+
 ## [0.6.0] - 2026-11-08
 
 ### Added
