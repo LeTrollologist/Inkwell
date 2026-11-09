@@ -38,6 +38,7 @@ const ICONS = {
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>',
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h4M12 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  split: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M12 4v16"/></svg>',
   newChat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
 };
 
@@ -66,6 +67,7 @@ const state = {
   imageScope: "",
   imagesDismissed: false,
   reasoningNotices: new Set(),
+  liveTimer: 0,
 };
 
 if (state.chatMode === "search") state.chatMode = "fetch";
@@ -120,6 +122,18 @@ function formatBytes(bytes) {
 
 function statState(text) {
   $("statState").textContent = text;
+}
+
+/**
+ * Shows the drop target. `markdown` is how many of the dragged files Inkwell
+ * can open, so the overlay can explain a non-Markdown drop.
+ */
+function setDropOverlay(active, markdown = 1) {
+  const overlay = $("dropOverlay");
+  overlay.hidden = !active;
+  overlay.classList.toggle("rejected", active && markdown === 0);
+  $("dropLabel").textContent =
+    markdown > 0 ? "Drop Markdown to read" : "Only Markdown files open in Inkwell";
 }
 
 function applyTheme(theme) {
@@ -426,23 +440,31 @@ function updateDirtyUI() {
   }
   $("editorState").textContent = state.dirty ? "Unsaved changes" : "Saved";
   $("editorState").classList.toggle("dirty", state.dirty);
-  const showSave = hasDoc && (state.view === "source" || state.dirty);
+  const showSave = hasDoc && (state.view !== "rendered" || state.dirty);
   $("saveBtn").hidden = !showSave;
   $("saveBtn").disabled = !showSave;
 }
 
 function setView(view) {
-  state.view = view === "source" ? "source" : "rendered";
-  $("app").dataset.view = state.view;
+  state.view = view === "source" || view === "split" ? view : "rendered";
   const hasDoc = !!state.doc;
   const isSource = state.view === "source";
+  const isSplit = state.view === "split";
+  $("app").dataset.view = state.view;
+  // Split shows the editor and the rendered document together.
   $("doc").hidden = !hasDoc || isSource;
-  $("editorShell").hidden = !hasDoc || !isSource;
+  $("editorShell").hidden = !hasDoc || state.view === "rendered";
   $("empty").hidden = hasDoc;
   $("sourceBtn").classList.toggle("active", isSource);
   $("sourceBtn").title = isSource
     ? "Back to preview (Ctrl+U)"
     : "Edit Markdown source (Ctrl+U)";
+  $("splitBtn").classList.toggle("active", isSplit);
+  $("splitBtn").title = isSplit
+    ? "Back to preview (Ctrl+Shift+U)"
+    : "Split editor and preview (Ctrl+Shift+U)";
+  observeHeadings();
+  updateProgress();
   updateDirtyUI();
 }
 
@@ -582,7 +604,7 @@ function buildToc() {
 }
 
 function scrollToHeading(id) {
-  if (state.view !== "rendered") setView("rendered");
+  if (state.view !== "rendered" && state.view !== "split") setView("rendered");
   const target = document.getElementById(id);
   if (!target) return;
   target.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -608,7 +630,11 @@ function observeHeadings() {
       if (!visible.length) return;
       setActiveHeading(visible[0].target.id);
     },
-    { root: $("reader"), rootMargin: "-8% 0px -72% 0px", threshold: 0 }
+    {
+      root: state.view === "split" ? $("doc") : $("reader"),
+      rootMargin: "-8% 0px -72% 0px",
+      threshold: 0,
+    }
   );
   headings.forEach((heading) => headingObserver.observe(heading));
 }
@@ -622,9 +648,9 @@ function setActiveHeading(id) {
 }
 
 function updateProgress() {
-  const reader = $("reader");
-  const max = reader.scrollHeight - reader.clientHeight;
-  const ratio = max > 4 ? Math.min(1, Math.max(0, reader.scrollTop / max)) : 0;
+  const scroller = state.view === "split" ? $("doc") : $("reader");
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  const ratio = max > 4 ? Math.min(1, Math.max(0, scroller.scrollTop / max)) : 0;
   $("progressBar").style.width = `${(ratio * 100).toFixed(2)}%`;
 }
 
@@ -1885,6 +1911,17 @@ function wireDocumentEvents() {
   listen("document:error", (event) => {
     toast(event.payload?.message || "Could not open that file.", "error");
   });
+
+  // Native drags never reach the page, so the Rust shell reports them.
+  listen("drop:state", (event) => {
+    const { active, markdown } = event.payload || {};
+    setDropOverlay(!!active, Number(markdown) || 0);
+  });
+
+  listen("app:notice", (event) => {
+    const message = event.payload?.message;
+    if (message) toast(message);
+  });
 }
 
 /* ------------------------------------------------------------- settings modal */
@@ -2297,6 +2334,15 @@ function toggleRail(force) {
   localStorage.setItem(LS.rail, app.dataset.rail);
 }
 
+function openEditor(view) {
+  if (!state.doc) return;
+  // The editor buffer is the source of truth while editing, so reopening it
+  // keeps unsaved changes instead of resetting to the last saved content.
+  $("source").value = state.doc.content;
+  setView(view);
+  $("source").focus();
+}
+
 async function toggleSource() {
   if (!state.doc) {
     toast("Open a document first.", "error");
@@ -2304,26 +2350,86 @@ async function toggleSource() {
   }
   if (state.view === "source") {
     await previewEditor();
-  } else {
-    $("source").value = state.doc.content;
-    setView("source");
-    $("source").focus();
-  }
-}
-
-async function previewEditor() {
-  if (!state.doc) return;
-  const content = $("source").value;
-  if (content.length > MAX_DOC_BYTES) {
-    toast("That document is too large to preview (8 MB limit).", "error");
     return;
   }
-  await setDocument(state.doc.name, content, {
-    path: state.doc.path,
-    size: new Blob([content]).size,
-    remember: false,
-    keepSaved: true,
-  });
+  openEditor("source");
+}
+
+async function toggleSplit() {
+  if (!state.doc) {
+    toast("Open a document first.", "error");
+    return;
+  }
+  if (state.view === "split") {
+    await previewEditor();
+    return;
+  }
+  openEditor("split");
+}
+
+/** Renders the editor buffer, then shows the preview. */
+async function previewEditor() {
+  if (!state.doc) return;
+  const ok = await syncPreview({ announce: true });
+  setView("rendered");
+  if (ok) $("reader").scrollTop = 0;
+}
+
+let previewToken = 0;
+
+/**
+ * Re-renders the source pane into the reading pane without touching the saved
+ * snapshot: the split view stays in sync as you type, and switching back to the
+ * preview is instant. Returns false when the buffer could not be rendered.
+ */
+async function syncPreview({ announce = false } = {}) {
+  if (!state.doc) return false;
+  const content = $("source").value;
+  if (content.length > MAX_DOC_BYTES) {
+    if (announce) toast("That document is too large to preview (8 MB limit).", "error");
+    return false;
+  }
+  const token = ++previewToken;
+  let rendered;
+  try {
+    rendered = await renderMarkdown(content, state.doc.path || null);
+  } catch (err) {
+    if (announce) toast(`Could not render this document: ${err}`, "error");
+    return false;
+  }
+  // A newer keystroke already started another render; drop this result.
+  if (token !== previewToken) return false;
+
+  $("doc").innerHTML = rendered.html;
+  state.missingImages = (rendered.unresolvedImages || []).filter(
+    (reference) => !state.resolvedImages.has(reference)
+  );
+  applyResolvedImages();
+  refreshImageWarning();
+  enhanceMarkdown($("doc"));
+
+  state.raw = content;
+  state.doc.content = content;
+  state.doc.size = new Blob([content]).size;
+  state.doc.words = rendered.words;
+  state.doc.title = rendered.title || state.doc.name;
+  state.outline = rendered.outline || [];
+  state.doc.outline = state.outline;
+  buildToc();
+  updateDirtyUI();
+  $("statCounts").textContent = `${state.doc.words.toLocaleString()} words · ${Math.max(
+    1,
+    Math.round(state.doc.words / 220)
+  )} min read`;
+  return true;
+}
+
+/** Debounced live preview for the split view. */
+function scheduleLivePreview() {
+  clearTimeout(state.liveTimer);
+  state.liveTimer = setTimeout(() => {
+    syncPreview();
+  }, 220);
 }
 
 async function saveDocument({ as = false } = {}) {
@@ -2514,6 +2620,7 @@ function wireEvents() {
   // files
   $("openBtn").addEventListener("click", pickFile);
   $("emptyOpen").addEventListener("click", pickFile);
+  $("splitBtn").addEventListener("click", toggleSplit);
   $("fileInput").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) openFile(file);
@@ -2535,10 +2642,32 @@ function wireEvents() {
     state.raw = state.doc.content;
     state.doc.size = new Blob([state.doc.content]).size;
     updateDirtyUI();
+    if (state.view === "split") scheduleLivePreview();
     clearTimeout(state.sessionTimer);
     state.sessionTimer = setTimeout(() => {
       if (state.doc) saveSession(state.doc);
     }, 350);
+  });
+  $("source").addEventListener("keydown", (event) => {
+    if (event.key !== "Tab" || event.ctrlKey || event.metaKey || event.altKey) return;
+    event.preventDefault();
+    const area = $("source");
+    const start = area.selectionStart;
+    const end = area.selectionEnd;
+    const value = area.value;
+    if (event.shiftKey) {
+      // Outdent the current line by up to one tab stop.
+      const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+      const indent = value.slice(lineStart).match(/^\t|^ {1,2}/);
+      if (!indent) return;
+      const width = indent[0].length;
+      area.value = value.slice(0, lineStart) + value.slice(lineStart + width);
+      area.selectionStart = area.selectionEnd = Math.max(lineStart, start - width);
+    } else {
+      area.value = `${value.slice(0, start)}  ${value.slice(end)}`;
+      area.selectionStart = area.selectionEnd = start + 2;
+    }
+    area.dispatchEvent(new Event("input", { bubbles: true }));
   });
   $("sampleBtn").addEventListener("click", async () => {
     await setDocument("inkwell-welcome.md", SAMPLE_MD, { remember: false });
@@ -2690,7 +2819,7 @@ function wireInteractionEvents() {
     if (!event.dataTransfer?.types?.includes("Files")) return;
     event.preventDefault();
     dragDepth += 1;
-    $("dropOverlay").hidden = false;
+    setDropOverlay(true);
   });
   window.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -2698,12 +2827,12 @@ function wireInteractionEvents() {
   });
   window.addEventListener("dragleave", () => {
     dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) $("dropOverlay").hidden = true;
+    if (dragDepth === 0) setDropOverlay(false);
   });
   window.addEventListener("drop", (event) => {
     event.preventDefault();
     dragDepth = 0;
-    $("dropOverlay").hidden = true;
+    setDropOverlay(false);
     // Files are opened by the native drag/drop handler in main.rs so the
     // document keeps its filesystem path (needed for relative images).
   });
@@ -2727,7 +2856,8 @@ function wireInteractionEvents() {
       toggleRail();
     } else if (key === "u") {
       event.preventDefault();
-      toggleSource();
+      if (event.shiftKey) toggleSplit();
+      else toggleSource();
     } else if (key === "s") {
       event.preventDefault();
       saveDocument({ as: event.shiftKey });
@@ -2769,6 +2899,7 @@ async function openInitialDocument() {
 async function boot() {
   $("railBtn").innerHTML = ICONS.rail;
   $("sourceBtn").innerHTML = ICONS.source;
+  $("splitBtn").innerHTML = ICONS.split;
   $("settingsBtn").innerHTML = ICONS.settings;
   $("newChatBtn").innerHTML = ICONS.newChat;
 

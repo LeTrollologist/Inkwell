@@ -119,8 +119,8 @@ checksums and verification commands are published with every release.
 - **Fast, local rendering** - GFM tables, task lists, footnotes, strikethrough, code fences and
   KaTeX math, rendered by `pulldown-cmark` in Rust.
 - **Editor & reader** - edit Markdown in place, save or save-as, unsaved-change tracking,
-  outline with scroll-spy, reading progress, print/PDF, dark & light themes, frameless window
-  with native drag and resize.
+  a side-by-side split view with live preview, outline with scroll-spy, reading progress,
+  print/PDF, dark & light themes, frameless window with native drag and resize.
 - **Any model, your key** - OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
   OpenRouter, Demon Route, Cheaper Inference, API Route, xAI, Ollama, LM Studio, or any OpenAI-compatible
   endpoint.
@@ -170,10 +170,12 @@ source.
 
 **Platform support.** Windows 10/11 is the validated runtime for this release. The wry/tao
 shell and the credential layer also compile on macOS and Linux, but those builds are not yet
-validated. The native open dialog and drag/drop paths are Windows-only for now; other
-platforms fall back to the browser file input. On Linux, persistent key storage requires a
-Secret Service provider (GNOME Keyring or KWallet); without one, Inkwell runs with session-only
-keys and says so in Settings.
+validated. File dialogs are native on every platform: the Win32 common dialogs on Windows,
+`osascript` on macOS and `zenity`/`kdialog` on Linux. Where none of those helpers is installed,
+Inkwell falls back to the in-window file picker. Dropped files always arrive as real OS paths,
+so relative images and Save keep working. On Linux, persistent key storage requires a Secret
+Service provider (GNOME Keyring or KWallet); without one, Inkwell runs with session-only keys
+and says so in Settings.
 
 Packaging a release additionally needs Python 3.10+ and Inno Setup 6.3+; see
 [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
@@ -358,6 +360,7 @@ Use the selector in the chat composer:
 | `Ctrl+J` | Toggle the assistant |
 | `Ctrl+B` | Toggle the sidebar |
 | `Ctrl+U` | Rendered ⇄ Markdown editor |
+| `Ctrl+Shift+U` | Rendered ⇄ split editor with live preview |
 | `Ctrl+S` | Save the current document |
 | `Ctrl+Shift+S` | Save as… |
 | `Ctrl+,` | Assistant settings |
@@ -369,6 +372,22 @@ Use the selector in the chat composer:
 Drag a `.md` file onto the window, use the native **Open** dialog (`Ctrl+O`), or use **Paste**
 to render Markdown from the clipboard. Starting Inkwell with a file argument
 (`inkwell.exe notes.md`) opens it directly. `.txt` files also work with the viewer.
+
+## Editing
+
+Editing never needs a model, an account or a key. Three views share one document:
+
+- **Rendered** - the reading view.
+- **Source** (`Ctrl+U`) - a full-window Markdown editor with the outline rail beside it.
+- **Split** (`Ctrl+Shift+U`) - the editor on the left and the rendered document on the right.
+  The preview re-renders as you type (debounced), so the outline, reading progress, word count
+  and relative images stay in step with the buffer.
+
+`Tab` indents by two spaces and `Shift+Tab` outdents the current line, so Markdown lists and
+code fences do not shift focus out of the editor. Unsaved changes are marked in the title bar
+and the editor bar, `Ctrl+S` saves in place, `Ctrl+Shift+S` picks a new path, and closing
+Inkwell with unsaved changes asks first. AI edits still go through the Co-Pilot's review card
+and are never applied automatically.
 
 ## Security & privacy
 
@@ -413,7 +432,8 @@ inkwell/
 ├── installer/         Inno Setup script for the per-user installer
 ├── src/
 │   ├── main.rs        tao event loop, frameless window, embedded webview, file drop
-│   ├── app.rs         IPC dispatch, native file picker, async bridge, asset protocol
+│   ├── app.rs         IPC dispatch, Win32 dialogs, async bridge, asset protocol
+│   ├── dialogs.rs     macOS/Linux native open and save dialogs
 │   ├── llm.rs         cancellable OpenAI / Anthropic / Gemini SSE streaming
 │   ├── markdown.rs    renderer, outline/anchors, HTML escaping, URL/image sanitising, math
 │   ├── fetch.rs       local document retrieval for Fetch mode
@@ -462,22 +482,25 @@ scripts\test.ps1         # or: cargo test
 node scripts\check-ui.js # duplicate functions / missing ids / markup balance
 ```
 
-The suite has **72 tests**. It covers anchor-id generation and deduplication, front-matter
+The suite has **87 tests**. It covers anchor-id generation and deduplication, front-matter
 extraction, escaping of raw HTML and LLM-style injection payloads, URL-scheme sanitisation,
 malformed documents, GFM tables/task lists, KaTeX math wrappers, relative-image containment
 and embedding, local fetch retrieval and citations, web-search request construction and
 provider response parsing, external-content sanitisation, rate-limit handling, SSE parsing for
 all three transports, request construction (including reasoning/thinking options), tool-call
 planning and JSON fallback, cancellation/interrupted streams/rate-limit and 5xx handling
-against a local mock server, document saving, credential lookup/migration and key masking.
+against a local mock server, document saving, credential lookup/migration and key masking,
+provider capability metadata, and the macOS/Linux dialog command lines, path parsing and
+cancellation handling.
 
 The release pipeline runs these checks before packaging and aborts on failure; see
 [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
 
 ## Notes & limitations
 
-- Inkwell is an **editor and reader**: Markdown can be edited in the source pane and saved with
-  `Ctrl+S`; AI edits are only applied after you review and confirm them.
+- Inkwell is an **editor and reader**: Markdown can be edited in the source pane or the split
+  view and saved with `Ctrl+S`; AI edits are only applied after you review and confirm them.
+  Editing works with no provider configured.
 - Relative images are embedded as data URLs when the document has a folder path and must live
   inside that folder. Documents opened through the browser file-input fallback have no path, so
   the reader asks for the document's folder the first time a relative image fails to load.

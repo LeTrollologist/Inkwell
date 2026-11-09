@@ -3,6 +3,9 @@
 mod app;
 mod assets;
 mod credentials;
+// Windows uses the Win32 dialogs in `app`; this module serves the other platforms.
+#[cfg_attr(windows, allow(dead_code))]
+mod dialogs;
 mod fetch;
 mod llm;
 mod markdown;
@@ -68,10 +71,45 @@ fn main() {
         .with_background_color((10, 11, 15, 255))
         .with_custom_protocol("inkwell".into(), |_id, request| app::serve_asset(request))
         .with_drag_drop_handler(move |event| {
-            if let DragDropEvent::Drop { paths, .. } = event {
-                if let Some(path) = paths.into_iter().find(|path| app::is_markdown(path)) {
-                    let _ = drop_proxy.send_event(UserEvent::OpenPath(path));
+            // Report the drag so the window can show the drop target, then open
+            // the first Markdown file. Paths come from the OS on every platform,
+            // so a dropped document keeps its folder for relative images.
+            match event {
+                DragDropEvent::Enter { paths, .. } => {
+                    let markdown = paths.iter().filter(|path| app::is_markdown(path)).count();
+                    let _ = drop_proxy.send_event(UserEvent::DropState {
+                        active: true,
+                        markdown,
+                    });
                 }
+                DragDropEvent::Leave => {
+                    let _ = drop_proxy.send_event(UserEvent::DropState {
+                        active: false,
+                        markdown: 0,
+                    });
+                }
+                DragDropEvent::Drop { paths, .. } => {
+                    let _ = drop_proxy.send_event(UserEvent::DropState {
+                        active: false,
+                        markdown: 0,
+                    });
+                    let mut documents: Vec<PathBuf> = paths
+                        .into_iter()
+                        .filter(|path| app::is_markdown(path))
+                        .collect();
+                    if documents.is_empty() {
+                        let _ = drop_proxy.send_event(UserEvent::DropRejected);
+                        return true;
+                    }
+                    let extra = documents.len() - 1;
+                    let first = documents.remove(0);
+                    let _ = drop_proxy.send_event(UserEvent::OpenPath(first));
+                    if extra > 0 {
+                        let _ = drop_proxy.send_event(UserEvent::DropExtra(extra));
+                    }
+                }
+                DragDropEvent::Over { .. } => {}
+                _ => {}
             }
             true
         })
@@ -101,13 +139,36 @@ fn main() {
             Event::UserEvent(UserEvent::Ipc(body)) => {
                 app::handle_ipc(&body, &window, &context, &emitter);
             }
-            Event::UserEvent(UserEvent::OpenPath(path)) => {
-                match app::read_document(&path) {
-                    Ok(doc) => emitter.event("document:open", doc),
-                    Err(message) => {
-                        emitter.event("document:error", serde_json::json!({ "message": message }))
-                    }
+            Event::UserEvent(UserEvent::OpenPath(path)) => match app::read_document(&path) {
+                Ok(doc) => emitter.event("document:open", doc),
+                Err(message) => {
+                    emitter.event("document:error", serde_json::json!({ "message": message }))
                 }
+            },
+            Event::UserEvent(UserEvent::DropState { active, markdown }) => {
+                emitter.event(
+                    "drop:state",
+                    serde_json::json!({ "active": active, "markdown": markdown }),
+                );
+            }
+            Event::UserEvent(UserEvent::DropRejected) => {
+                emitter.event(
+                    "document:error",
+                    serde_json::json!({
+                        "message": "Only Markdown files can be opened. Drop a .md, .markdown or \
+                                    .txt file."
+                    }),
+                );
+            }
+            Event::UserEvent(UserEvent::DropExtra(extra)) => {
+                emitter.event(
+                    "app:notice",
+                    serde_json::json!({
+                        "message": format!(
+                            "Opened the first Markdown file; {extra} more were ignored."
+                        )
+                    }),
+                );
             }
             Event::UserEvent(UserEvent::Close) => *control_flow = ControlFlow::Exit,
             _ => {}

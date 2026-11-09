@@ -872,6 +872,69 @@ html[data-theme="light"] .drop-overlay {
   height: 34px;
 }
 
+/* A drag that carries nothing Inkwell can open says so instead of inviting
+   the drop. */
+.drop-overlay.rejected {
+  border-color: rgba(248, 113, 113, 0.55);
+}
+
+.drop-overlay.rejected .drop-inner {
+  color: #fca5a5;
+}
+
+html[data-theme="light"] .drop-overlay.rejected .drop-inner {
+  color: #b91c1c;
+}
+
+/* ---------- split editor ---------- */
+
+/* Source on the left, rendered document on the right; each pane scrolls on its
+   own and the preview follows the editor. */
+#app[data-view="split"] .reader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  scroll-behavior: auto;
+}
+
+#app[data-view="split"] .progress,
+#app[data-view="split"] .doc-warning {
+  grid-column: 1 / -1;
+}
+
+#app[data-view="split"] #doc {
+  grid-column: 1;
+  grid-row: 3;
+  max-width: none;
+  margin: 0;
+  padding: 28px 30px 90px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+#app[data-view="split"] .editor-shell {
+  grid-column: 2;
+  grid-row: 3;
+  height: 100%;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 18px 16px;
+  overflow: hidden;
+}
+
+#app[data-view="split"] .source-editor {
+  height: 100%;
+  min-height: 0;
+  resize: none;
+}
+
+/* The shortcut hint has no room in a half-width pane; the buttons stay. */
+#app[data-view="split"] .editor-hint {
+  display: none;
+}
+
 /* ---------- markdown ---------- */
 
 .markdown {

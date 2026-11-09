@@ -37,6 +37,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>
           </button>
           <button class="icon-btn" id="sourceBtn" title="Edit Markdown source (Ctrl+U)" aria-label="Edit source"></button>
+          <button class="icon-btn" id="splitBtn" title="Split editor and preview (Ctrl+Shift+U)" aria-label="Toggle split view"></button>
           <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"></button>
           <button class="icon-btn" id="settingsBtn" title="Settings (Ctrl+,)" aria-label="Settings"></button>
           <button class="pill-btn" id="chatToggle" title="Toggle assistant (Ctrl+J)">
@@ -135,7 +136,7 @@
           <div class="editor-shell" id="editorShell" hidden>
             <div class="editor-bar">
               <span class="editor-state" id="editorState">Saved</span>
-              <span class="editor-hint">Ctrl+S to save · Ctrl+U for preview</span>
+              <span class="editor-hint">Ctrl+S save · Ctrl+U source · Ctrl+Shift+U split</span>
               <div class="spacer"></div>
               <button class="ghost-btn tiny" id="saveAsBtn">Save as…</button>
               <button class="ghost-btn tiny" id="previewBtn">Preview</button>
@@ -150,7 +151,7 @@
                 <path d="M12 16V4m0 0 4 4m-4-4L8 8" />
                 <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
               </svg>
-              <span>Drop Markdown to read</span>
+              <span id="dropLabel">Drop Markdown to read</span>
             </div>
           </div>
         </main>

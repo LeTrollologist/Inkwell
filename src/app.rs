@@ -25,6 +25,15 @@ pub enum UserEvent {
     Ipc(String),
     Script(String),
     OpenPath(PathBuf),
+    /// A native drag entered, left or ended over the window.
+    DropState {
+        active: bool,
+        markdown: usize,
+    },
+    /// A drop carried files, but none of them was Markdown.
+    DropRejected,
+    /// A drop opened one document and ignored the rest.
+    DropExtra(usize),
     Close,
 }
 
@@ -297,7 +306,9 @@ fn pick_document_path(window: &Window) -> Result<Option<PathBuf>, String> {
 
 #[cfg(not(target_os = "windows"))]
 fn pick_document_path(_window: &Window) -> Result<Option<PathBuf>, String> {
-    Err("The native file picker is not supported on this platform yet.".to_string())
+    crate::dialogs::run(&crate::dialogs::open_commands(
+        crate::dialogs::current_platform(),
+    ))
 }
 
 #[cfg(target_os = "windows")]
@@ -361,8 +372,19 @@ fn pick_save_path(window: &Window, default_name: &str) -> Result<Option<PathBuf>
 }
 
 #[cfg(not(target_os = "windows"))]
-fn pick_save_path(_window: &Window, _default_name: &str) -> Result<Option<PathBuf>, String> {
-    Err("The native save dialog is not supported on this platform yet.".to_string())
+fn pick_save_path(_window: &Window, default_name: &str) -> Result<Option<PathBuf>, String> {
+    let picked = crate::dialogs::run(&crate::dialogs::save_commands(
+        crate::dialogs::current_platform(),
+        default_name,
+    ))?;
+    Ok(picked.map(|mut path| {
+        // The dialogs above do not add an extension the way the Win32 filter
+        // does, so a bare name still saves as Markdown.
+        if path.extension().is_none() {
+            path.set_extension("md");
+        }
+        path
+    }))
 }
 
 fn resize_direction(name: &str) -> Option<ResizeDirection> {
