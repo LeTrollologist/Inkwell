@@ -199,5 +199,9 @@ Release candidate for 1.0, focused on editing and platform parity.
 
 - **Blank window on macOS and Linux.** wry only intercepts `<scheme>://` custom-protocol URLs there (Windows uses `http://<scheme>.localhost`), and Inkwell always loaded the Windows form, so the webview requested a real HTTP page. The entry URL is now chosen per platform.
 - **Linux on Wayland.** The webview is created through GTK (`build_gtk`); wry's plain `build` only supports X11 on Linux.
+
+### Planned
+
+- Record a macOS and a Linux build/runtime result in `docs/PLATFORMS.md` (issue #16) once CI can run or real hardware is available.
 - Code signing and VirusTotal submission hooks for future releases.
 - Installer branding and upgrade polish.
