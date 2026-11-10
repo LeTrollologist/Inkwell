@@ -10,15 +10,20 @@ Stages:
   1. preflight  Tool, version and clean-tree checks
   2. build      cargo build --release --locked
   3. test       cargo test --locked + UI consistency check
-  4. security   Optional cargo-audit log
-  5. package    Portable zip + Inno Setup installer
-  6. verify     Asset naming, archive contents and SHA-256 checksums
-  7. publish    GitHub release via gh (draft supported)
+  4. runtime    --smoke-test: webview loads and IPC answers; writes runtime-report.md
+  5. security   Optional cargo-audit log
+  6. package    Portable zip + Inno Setup installer
+  7. verify     Asset naming, archive contents and SHA-256 checksums
+  8. publish    GitHub release via gh (draft supported)
+
+`--validate-only` stops after stage 4 and works on macOS and Linux, so the same
+local pipeline produces the runtime result on every platform it is run on.
 """
 
 import argparse
 import hashlib
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -31,7 +36,9 @@ PROJECT_NAME = "inkwell"
 REPO_GH = "LeTrollologist/Inkwell"
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
-APP_EXE = ROOT / "target" / "release" / "inkwell.exe"
+APP_EXE = ROOT / "target" / "release" / (
+    "inkwell.exe" if sys.platform == "win32" else "inkwell"
+)
 INSTALLER_ISCC = ROOT / "installer" / "inkwell.iss"
 CHANGELOG = ROOT / "CHANGELOG.md"
 WEBVIEW2_LOADER = ROOT / "assets" / "runtime" / "x64" / "WebView2Loader.dll"
@@ -318,6 +325,115 @@ def stage_test():
         run([node, "scripts/check-ui.js"])
     else:
         print("  node not found; skipped scripts/check-ui.js")
+
+
+def rustc_host():
+    result = subprocess.run(
+        ["rustc", "-vV"], capture_output=True, text=True, check=False
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("host:"):
+            return line.split(":", 1)[1].strip()
+    return "unknown"
+
+
+def stage_runtime(tag, tag_dir, skip_runtime):
+    """Runs the built app far enough to prove the webview loads and IPC answers.
+
+    The result is written to `dist/<tag>/runtime-report.md` on whatever machine
+    runs the pipeline, which is how macOS and Linux get a documented runtime
+    result without a hosted CI service.
+    """
+    log("runtime", "Checking that the built app loads its UI and answers IPC...")
+    status = "skipped"
+    detail = "Skipped with --skip-runtime; this machine recorded no runtime result."
+
+    if skip_runtime:
+        print("  smoke test skipped (--skip-runtime)")
+    else:
+        try:
+            result = subprocess.run(
+                [str(APP_EXE), "--smoke-test"],
+                cwd=ROOT,
+                timeout=120,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except subprocess.TimeoutExpired:
+            status = "failed"
+            detail = "The app did not exit within 120 seconds."
+        except OSError as err:
+            status = "failed"
+            detail = f"The app could not be started: {err}"
+        else:
+            output = " ".join(
+                ((result.stdout or "") + " " + (result.stderr or "")).split()
+            )
+            if result.returncode == 0:
+                status = "passed"
+                detail = output or "The window opened and the page answered over IPC."
+            else:
+                status = "failed"
+                detail = output or f"The app exited with code {result.returncode}."
+        print(f"  smoke test: {status}")
+
+    detail = detail.replace("|", "\\|")
+    report = tag_dir / "runtime-report.md"
+    report.write_text(
+        "# Runtime validation\n\n"
+        "| | |\n"
+        "| --- | --- |\n"
+        f"| Version | {tag} |\n"
+        f"| Generated | {time.strftime('%Y-%m-%d %H:%M:%S')} |\n"
+        f"| Platform | {platform.system()} {platform.release()} "
+        f"({platform.machine()}) |\n"
+        f"| Rust host | {rustc_host()} |\n"
+        f"| Smoke test | {status} |\n"
+        f"| Detail | {detail} |\n\n"
+        "The smoke test starts the release executable with `--smoke-test`: it opens the "
+        "window, loads the UI in the platform webview and waits up to 30 seconds for the "
+        "page to answer `app_ready` over IPC. A `passed` row therefore means the webview "
+        "initialised and IPC works on this machine.\n",
+        encoding="utf-8",
+    )
+    print(f"  report: {report.relative_to(ROOT)}")
+
+    if status == "failed":
+        fail(
+            "the runtime smoke test failed on this machine, so this build would ship "
+            "without a runtime result. Fix the environment, or re-run with "
+            "--skip-runtime to record the skip explicitly."
+        )
+    return report
+
+
+def stage_preflight_validate(version, allow_dirty):
+    """Lighter preflight for `--validate-only`; works on macOS and Linux too."""
+    log("preflight", "Checking tools and version (validate only)...")
+    required = ["cargo", "rustc"]
+    missing = [tool for tool in required if not shutil.which(tool)]
+    if missing:
+        fail("missing required tools: " + ", ".join(missing))
+    for tool in required:
+        result = run([tool, "--version"], capture=True)
+        print(f"  {result.stdout.strip()}")
+    node = shutil.which("node")
+    print(f"  Node.js: {node or 'not found (UI consistency check will be skipped)'}")
+    if not allow_dirty and not git_clean():
+        fail(
+            "the working tree is dirty. Commit the changes first (or pass --allow-dirty)."
+        )
+    actual = cargo_version()
+    if actual != version:
+        fail(f"Cargo.toml version is {actual}, but {version} was requested.")
+    print(f"  Version: {actual}")
+    print(
+        f"  Platform: {platform.system()} {platform.release()} "
+        f"({platform.machine()})"
+    )
 
 
 def stage_security(tag_dir):
@@ -672,6 +788,17 @@ def main():
         help="produce only the portable zip (no Inno Setup required)",
     )
     parser.add_argument(
+        "--skip-runtime",
+        action="store_true",
+        help="skip the webview/IPC smoke test and record it as skipped",
+    )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="build, test and record a runtime result on this machine, then stop "
+        "(no packaging or publishing; works on macOS and Linux too)",
+    )
+    parser.add_argument(
         "--allow-dirty",
         action="store_true",
         help="allow packaging from a dirty working tree (never for publishing)",
@@ -687,6 +814,18 @@ def main():
     tag_dir = DIST / tag
     tag_dir.mkdir(parents=True, exist_ok=True)
 
+    if args.validate_only:
+        stage_preflight_validate(version, args.allow_dirty)
+        stage_build()
+        if not args.skip_tests:
+            stage_test()
+        stage_runtime(tag, tag_dir, skip_runtime=args.skip_runtime)
+        print(
+            f"\nRuntime report: {(tag_dir / 'runtime-report.md').relative_to(ROOT)}"
+        )
+        print("Validate-only run finished; nothing was packaged or published.")
+        return
+
     stage_preflight(
         publish=publish,
         skip_installer=args.skip_installer,
@@ -697,6 +836,7 @@ def main():
     stage_build()
     if not args.skip_tests:
         stage_test()
+    stage_runtime(tag, tag_dir, skip_runtime=args.skip_runtime)
     stage_security(tag_dir)
 
     assets = stage_package(

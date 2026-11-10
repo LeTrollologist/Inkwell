@@ -62,6 +62,7 @@ It never creates or moves a tag; `--verify-tag` prevents publishing against a mi
 | `preflight` | Checks Rust, `gh`, Inno Setup, Python and the clean working tree |
 | `build` | `cargo build --release --locked` (uses project-local MinGW when present) |
 | `test` | `cargo test --locked` plus `node scripts/check-ui.js` |
+| `runtime` | Runs the built app with `--smoke-test` (webview loads, IPC answers) and writes `runtime-report.md` |
 | `security` | Runs `cargo audit` when available and writes `dist/<tag>/audit/cargo-audit.txt` |
 | `package` | Stages files, builds the portable zip and compiles the Inno Setup installer |
 | `verify` | Validates asset names/contents and writes `SHA256SUMS.txt` |
@@ -84,6 +85,13 @@ python scripts\pipeline.py v0.4.0 --no-publish --skip-installer
 
 # Skip tests only when iterating on packaging (never for a real release)
 python scripts\pipeline.py v0.4.0 --no-publish --skip-tests --allow-dirty
+
+# Build, test and record a runtime result on this machine, then stop
+# (works on macOS and Linux; nothing is packaged or published)
+python scripts\pipeline.py v1.0.0-rc --validate-only
+
+# Record an explicit runtime skip on a headless machine
+python scripts\pipeline.py v1.0.0-rc --validate-only --skip-runtime
 ```
 
 Equivalent `make` targets (when GNU Make is installed):
@@ -111,12 +119,15 @@ dist/v0.4.0/
 ├── Inkwell-Setup-0.4.0.exe
 ├── SHA256SUMS.txt
 ├── release_notes.md
+├── runtime-report.md
 └── audit/
     └── cargo-audit.txt
 ```
 
 Only the zip, installer and `SHA256SUMS.txt` are uploaded. `release_notes.md` becomes the
-release body; the audit log stays local unless you choose to attach it.
+release body; `runtime-report.md` records the OS, architecture and webview/IPC smoke result for
+the machine that built the release (commit it or attach it when validating macOS and Linux — see
+[docs/PLATFORMS.md](docs/PLATFORMS.md)); the audit log stays local.
 
 ## 7. Verifying an installer locally
 

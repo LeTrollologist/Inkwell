@@ -192,7 +192,8 @@ Release candidate for 1.0, focused on editing and platform parity.
 ### Added
 
 - **`--smoke-test`.** Opens the window, loads the UI and waits up to 30 seconds for the frontend to answer `app_ready` over IPC, then exits 0 (1 on timeout). It is the runtime check that works without an interactive desktop, so CI and packagers can verify a build actually renders.
-- **CI workflow** (`.github/workflows/ci.yml`): builds and tests on Windows, macOS and Ubuntu, runs the UI checks, and runs the smoke test under Xvfb/D-Bus on Linux.
+- **Runtime stage in the local pipeline.** `scripts/pipeline.py` now starts the built app with `--smoke-test` on every run and writes `dist/<tag>/runtime-report.md` (OS, architecture, Rust host, webview/IPC result). `--skip-runtime` records an explicit skip instead.
+- **`--validate-only` pipeline mode.** `python scripts/pipeline.py <tag> --validate-only` builds, tests and records a runtime result on macOS and Linux too, then stops without packaging or publishing — the same local pipeline, no hosted CI.
 - **`docs/PLATFORMS.md`**: build requirements, validation checklist, known limitations and the per-platform status table.
 
 ### Fixed
@@ -202,6 +203,6 @@ Release candidate for 1.0, focused on editing and platform parity.
 
 ### Planned
 
-- Record a macOS and a Linux build/runtime result in `docs/PLATFORMS.md` (issue #16) once CI can run or real hardware is available.
+- Record a macOS and a Linux build/runtime result in `docs/PLATFORMS.md` (issue #16) by running `scripts/pipeline.py <tag> --validate-only` on those machines.
 - Code signing and VirusTotal submission hooks for future releases.
 - Installer branding and upgrade polish.

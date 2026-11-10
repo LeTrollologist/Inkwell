@@ -104,14 +104,25 @@ For a full manual pass:
    warning instead of failing.
 7. **Quit** — closing the window exits the process.
 
-## CI
+## Local validation
 
-`.github/workflows/ci.yml` builds and tests on `windows-latest`, `macos-latest` and
-`ubuntu-22.04`, runs `node scripts/check-ui.js`, and runs the smoke test (under Xvfb and a private
-D-Bus session on Linux). It has not produced a result yet: the account running this repository is
-currently blocked from starting jobs.
+There is no hosted CI, by design: the release pipeline is local
+([RELEASE_PROCESS.md](../RELEASE_PROCESS.md)). Every pipeline run now includes a `runtime` stage
+that starts the built executable with `--smoke-test` and writes the outcome to
+`dist/<tag>/runtime-report.md` — OS, architecture, Rust host, and whether the webview loaded and
+answered IPC.
 
-> The job was not started because your account is locked due to a billing issue.
+To record a result for a platform, run this on that platform:
 
-Once that is resolved, the workflow is the recurring validation record: a green macOS or Ubuntu
-job means the build, the test suite and the webview/IPC smoke test all passed on that platform.
+```sh
+python3 scripts/pipeline.py 1.0.0-rc --validate-only
+```
+
+`--validate-only` builds, runs the test suite and the smoke test, writes the report, and stops —
+nothing is packaged or published. Unlike the release path (Windows-only because of the installer),
+it runs on macOS and Linux. On a headless machine use `--skip-runtime`, which records an explicit
+skip instead of a result.
+
+The Windows numbers above come from this pipeline on Windows. The macOS and Linux rows stay
+"not yet run" until someone runs the command on one of those machines and commits the resulting
+report next to this page.

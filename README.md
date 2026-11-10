@@ -484,8 +484,10 @@ node scripts\check-ui.js # duplicate functions / missing ids / markup balance
 ```
 
 `--smoke-test` opens the window, waits up to 30 seconds for the page to report itself ready over
-IPC, and exits 0 (or 1 on timeout). CI runs it on macOS and Linux as well as the unit tests; see
-[docs/PLATFORMS.md](docs/PLATFORMS.md) for the per-platform validation status.
+IPC, and exits 0 (or 1 on timeout). The release pipeline runs it on every build and records the
+result in `dist/<tag>/runtime-report.md`; `python scripts/pipeline.py <tag> --validate-only`
+produces the same report on macOS and Linux. See [docs/PLATFORMS.md](docs/PLATFORMS.md) for the
+per-platform validation status.
 
 The suite has **87 tests**. It covers anchor-id generation and deduplication, front-matter
 extraction, escaping of raw HTML and LLM-style injection payloads, URL-scheme sanitisation,
