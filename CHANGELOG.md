@@ -189,5 +189,15 @@ Release candidate for 1.0, focused on editing and platform parity.
 
 ## [Unreleased]
 
+### Added
+
+- **`--smoke-test`.** Opens the window, loads the UI and waits up to 30 seconds for the frontend to answer `app_ready` over IPC, then exits 0 (1 on timeout). It is the runtime check that works without an interactive desktop, so CI and packagers can verify a build actually renders.
+- **CI workflow** (`.github/workflows/ci.yml`): builds and tests on Windows, macOS and Ubuntu, runs the UI checks, and runs the smoke test under Xvfb/D-Bus on Linux.
+- **`docs/PLATFORMS.md`**: build requirements, validation checklist, known limitations and the per-platform status table.
+
+### Fixed
+
+- **Blank window on macOS and Linux.** wry only intercepts `<scheme>://` custom-protocol URLs there (Windows uses `http://<scheme>.localhost`), and Inkwell always loaded the Windows form, so the webview requested a real HTTP page. The entry URL is now chosen per platform.
+- **Linux on Wayland.** The webview is created through GTK (`build_gtk`); wry's plain `build` only supports X11 on Linux.
 - Code signing and VirusTotal submission hooks for future releases.
 - Installer branding and upgrade polish.

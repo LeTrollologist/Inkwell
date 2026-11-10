@@ -168,14 +168,14 @@ source.
   if the link complains about `-lgcc_eh`, create an empty archive in GCC's lib directory
   (`ar rcs libgcc_eh.a`, then delete it if you upgrade GCC).
 
-**Platform support.** Windows 10/11 is the validated runtime for this release. The wry/tao
-shell and the credential layer also compile on macOS and Linux, but those builds are not yet
-validated. File dialogs are native on every platform: the Win32 common dialogs on Windows,
-`osascript` on macOS and `zenity`/`kdialog` on Linux. Where none of those helpers is installed,
-Inkwell falls back to the in-window file picker. Dropped files always arrive as real OS paths,
-so relative images and Save keep working. On Linux, persistent key storage requires a Secret
-Service provider (GNOME Keyring or KWallet); without one, Inkwell runs with session-only keys
-and says so in Settings.
+**Platform support.** Windows 10/11 is the validated runtime for this release. The same source
+targets macOS and Linux, and the platform-specific pieces are in place — WebKit-based webview on
+macOS, GTK/WebKitGTK 4.1 on Linux (X11 and Wayland), native dialogs through `osascript` on macOS
+and `zenity`/`kdialog` on Linux, and session-only keys when no Secret Service is running. Those
+platforms have not yet been launched on hardware by the maintainers, so
+[docs/PLATFORMS.md](docs/PLATFORMS.md) records the build requirements, the known limitations and
+a validation checklist; `inkwell --smoke-test` is the one-command webview/IPC check, and the CI
+workflow runs it on macOS and Linux.
 
 Packaging a release additionally needs Python 3.10+ and Inno Setup 6.3+; see
 [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
@@ -480,7 +480,12 @@ Events are request-scoped by a generated id, so overlapping streams can never mi
 ```powershell
 scripts\test.ps1         # or: cargo test
 node scripts\check-ui.js # duplicate functions / missing ids / markup balance
+./target/release/inkwell --smoke-test   # loads the real UI and waits for IPC
 ```
+
+`--smoke-test` opens the window, waits up to 30 seconds for the page to report itself ready over
+IPC, and exits 0 (or 1 on timeout). CI runs it on macOS and Linux as well as the unit tests; see
+[docs/PLATFORMS.md](docs/PLATFORMS.md) for the per-platform validation status.
 
 The suite has **87 tests**. It covers anchor-id generation and deduplication, front-matter
 extraction, escaping of raw HTML and LLM-style injection payloads, URL-scheme sanitisation,
