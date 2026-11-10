@@ -126,8 +126,8 @@ dist/v0.4.0/
 
 Only the zip, installer and `SHA256SUMS.txt` are uploaded. `release_notes.md` becomes the
 release body; `runtime-report.md` records the OS, architecture and webview/IPC smoke result for
-the machine that built the release (commit it or attach it when validating macOS and Linux — see
-[docs/PLATFORMS.md](docs/PLATFORMS.md)); the audit log stays local.
+the machine that built the release (record the macOS/Linux equivalents in
+[docs/PLATFORMS.md](docs/PLATFORMS.md) — `dist/` is not committed); the audit log stays local.
 
 ## 7. Verifying an installer locally
 

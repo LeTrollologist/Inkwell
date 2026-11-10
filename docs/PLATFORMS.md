@@ -124,5 +124,6 @@ it runs on macOS and Linux. On a headless machine use `--skip-runtime`, which re
 skip instead of a result.
 
 The Windows numbers above come from this pipeline on Windows. The macOS and Linux rows stay
-"not yet run" until someone runs the command on one of those machines and commits the resulting
-report next to this page.
+"not yet run" until someone runs the command on one of those machines and records the outcome in
+the table above — the generated report lives in `dist/<tag>/runtime-report.md`, which is ignored
+by Git like the rest of `dist/`.
