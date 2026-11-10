@@ -401,17 +401,26 @@ fn resize_direction(name: &str) -> Option<ResizeDirection> {
     })
 }
 
-pub fn handle_ipc(body: &str, window: &Window, context: &Arc<AppContext>, emitter: &Emitter) {
+/// Handles one IPC payload. Returns `true` when the page reported that it is up
+/// (`app_ready`), which is what `--smoke-test` waits for.
+pub fn handle_ipc(
+    body: &str,
+    window: &Window,
+    context: &Arc<AppContext>,
+    emitter: &Emitter,
+) -> bool {
     let request: IpcRequest = match serde_json::from_str(body) {
         Ok(request) => request,
         Err(err) => {
             eprintln!("inkwell: invalid IPC payload: {err}");
-            return;
+            return false;
         }
     };
+    let ready = request.cmd == "app_ready";
     if let Some(result) = dispatch(&request, window, context, emitter) {
         emitter.reply(&request.id, result);
     }
+    ready
 }
 
 fn dispatch(
@@ -422,6 +431,8 @@ fn dispatch(
 ) -> Option<Result<Value, String>> {
     let args = &request.args;
     match request.cmd.as_str() {
+        // The page reports that it booted; `--smoke-test` waits for this.
+        "app_ready" => Some(Ok(json!(true))),
         "win_minimize" => {
             window.set_minimized(true);
             Some(Ok(Value::Null))

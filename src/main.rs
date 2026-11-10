@@ -14,16 +14,34 @@ mod settings;
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tao::dpi::{LogicalSize, PhysicalPosition};
-use tao::event::{Event, WindowEvent};
+use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Icon, WindowBuilder};
 use wry::{DragDropEvent, WebContext, WebViewBuilder};
 
 use app::{AppContext, Emitter, UserEvent};
 
+/// wry only intercepts `<scheme>://` URLs on macOS and Linux, while Windows and
+/// Android use the `http://<scheme>.localhost` workaround. Loading the Windows
+/// form on the other platforms requests a real HTTP page and leaves the window
+/// blank, so the entry URL has to match the platform.
+#[cfg(any(windows, target_os = "android"))]
+const APP_URL: &str = "http://inkwell.localhost/index.html";
+#[cfg(not(any(windows, target_os = "android")))]
+const APP_URL: &str = "inkwell://localhost/index.html";
+
+/// How long `--smoke-test` waits for the page to report itself ready.
+const SMOKE_TIMEOUT: Duration = Duration::from_secs(30);
+
 fn main() {
+    // `--smoke-test` opens the window, waits for the page to answer over IPC and
+    // exits 0 (or 1 on timeout). It lets CI and packagers check WebView
+    // initialization on platforms without an interactive desktop session.
+    let smoke_test = std::env::args().any(|arg| arg == "--smoke-test");
+
     let context = Arc::new(AppContext::new(app::initial_path_from_args()));
 
     // Keep the WebView2 profile in the user's local app data rather than next
@@ -67,7 +85,7 @@ fn main() {
     let drop_proxy = event_loop.create_proxy();
 
     let builder = WebViewBuilder::new_with_web_context(&mut web_context)
-        .with_url("http://inkwell.localhost/index.html")
+        .with_url(APP_URL)
         .with_background_color((10, 11, 15, 255))
         .with_custom_protocol("inkwell".into(), |_id, request| app::serve_asset(request))
         .with_drag_drop_handler(move |event| {
@@ -122,12 +140,23 @@ fn main() {
     #[cfg(debug_assertions)]
     let builder = builder.with_devtools(true);
 
-    let webview = builder
-        .build(&window)
-        .expect("failed to create the Inkwell webview");
+    let webview = build_webview(builder, &window).expect("failed to create the Inkwell webview");
+
+    let smoke_deadline = smoke_test.then(|| Instant::now() + SMOKE_TIMEOUT);
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = match smoke_deadline {
+            Some(deadline) => ControlFlow::WaitUntil(deadline),
+            None => ControlFlow::Wait,
+        };
+        if matches!(
+            event,
+            Event::NewEvents(StartCause::ResumeTimeReached { .. })
+        ) && smoke_deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            eprintln!("inkwell: smoke test failed — the page never reported ready");
+            std::process::exit(1);
+        }
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -137,7 +166,11 @@ fn main() {
                 let _ = webview.evaluate_script(&js);
             }
             Event::UserEvent(UserEvent::Ipc(body)) => {
-                app::handle_ipc(&body, &window, &context, &emitter);
+                let ready = app::handle_ipc(&body, &window, &context, &emitter);
+                if ready && smoke_test {
+                    println!("inkwell: smoke test ok — the webview loaded and IPC responds");
+                    std::process::exit(0);
+                }
             }
             Event::UserEvent(UserEvent::OpenPath(path)) => match app::read_document(&path) {
                 Ok(doc) => emitter.event("document:open", doc),
@@ -174,6 +207,31 @@ fn main() {
             _ => {}
         }
     });
+}
+
+/// Builds the webview in a way that works on every platform we target.
+#[cfg(target_os = "linux")]
+fn build_webview(
+    builder: WebViewBuilder<'_>,
+    window: &tao::window::Window,
+) -> wry::Result<wry::WebView> {
+    use tao::platform::unix::WindowExtUnix;
+    use wry::WebViewBuilderExtUnix;
+
+    // wry's `build` only supports X11 on Linux; going through GTK also covers
+    // Wayland sessions. tao's default vertical box is the window's content area.
+    match window.default_vbox() {
+        Some(vbox) => builder.build_gtk(vbox),
+        None => builder.build_gtk(window.gtk_window()),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn build_webview(
+    builder: WebViewBuilder<'_>,
+    window: &tao::window::Window,
+) -> wry::Result<wry::WebView> {
+    builder.build(window)
 }
 
 /// The frameless window has an invisible resize frame; let the webview cover the

@@ -2930,6 +2930,8 @@ async function boot() {
     if (!providerReady(activeProvider())) {
       statState("Connect a model to chat");
     }
+    // Tells the shell (and `--smoke-test`) that the page booted and IPC works.
+    invoke("app_ready").catch(() => {});
   } catch (err) {
     console.error(err);
     toast(`Startup problem: ${err}`, "error");
