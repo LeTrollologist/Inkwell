@@ -115,7 +115,7 @@ answered IPC.
 To record a result for a platform, run this on that platform:
 
 ```sh
-python3 scripts/pipeline.py 1.0.0-rc --validate-only
+python3 scripts/pipeline.py 1.0.0 --validate-only
 ```
 
 `--validate-only` builds, runs the test suite and the smoke test, writes the report, and stops —

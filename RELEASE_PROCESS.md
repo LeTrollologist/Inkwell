@@ -88,10 +88,10 @@ python scripts\pipeline.py v0.4.0 --no-publish --skip-tests --allow-dirty
 
 # Build, test and record a runtime result on this machine, then stop
 # (works on macOS and Linux; nothing is packaged or published)
-python scripts\pipeline.py v1.0.0-rc --validate-only
+python scripts\pipeline.py v1.0.0 --validate-only
 
 # Record an explicit runtime skip on a headless machine
-python scripts\pipeline.py v1.0.0-rc --validate-only --skip-runtime
+python scripts\pipeline.py v1.0.0 --validate-only --skip-runtime
 ```
 
 Equivalent `make` targets (when GNU Make is installed):

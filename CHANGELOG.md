@@ -3,9 +3,11 @@
 All notable changes to Inkwell are documented here. The pipeline reads the section
 matching the release version when it builds GitHub release notes.
 
-## [1.0.0-rc] - 2026-11-09
+## [1.0.0] - 2026-11-12
 
-Release candidate for 1.0, focused on editing and platform parity.
+Inkwell 1.0. Editing no longer depends on a model, files open the same way on every platform,
+and the Co-Pilot tells you what the selected provider can actually do. This release builds on the
+provider capability reporting added in 0.7.0.
 
 ### Added
 
@@ -13,11 +15,26 @@ Release candidate for 1.0, focused on editing and platform parity.
 - **Editing that stays out of the way.** `Tab` indents by two spaces and `Shift+Tab` outdents the current line instead of moving focus, the editor remembers unsaved buffers when you switch views, and editing continues to work with no provider configured.
 - **Native file dialogs on macOS and Linux (#17).** The open and save dialogs now use `osascript` on macOS and `zenity`/`kdialog` on Linux, returning real filesystem paths so relative images and Save-as behave like the Win32 dialogs. The in-window file picker remains the fallback when no helper is installed.
 - **Consistent drag-and-drop.** The window now highlights the drop target while a native drag is over it, explains when a dragged file is not Markdown instead of silently ignoring it, and says when extra documents were ignored. Paths come from the OS on every platform.
+- **`--smoke-test`.** Opens the window, loads the UI and waits up to 30 seconds for the frontend to answer `app_ready` over IPC, then exits 0 (or 1 on timeout). This is the runtime check that works on a headless machine.
+- **Runtime stage in the local pipeline.** `scripts/pipeline.py` now starts the built app with `--smoke-test` on every run and writes `dist/<tag>/runtime-report.md` (OS, architecture, Rust host, webview/IPC result). `--skip-runtime` records an explicit skip instead.
+- **`--validate-only` pipeline mode.** `python scripts/pipeline.py <tag> --validate-only` builds, tests and records a runtime result on macOS and Linux too, then stops without packaging or publishing - the same local pipeline, no hosted CI.
+- **`docs/PLATFORMS.md`.** Build requirements, a validation checklist, known limitations and the per-platform status table.
 
 ### Changed
 
 - README documents the three editor views, the new shortcuts and per-platform dialog support.
-- `scripts/check-ui.js` still guards the shell; the release pipeline is unchanged.
+- `scripts/check-ui.js` still guards the shell; the release pipeline gains the runtime stage described above.
+
+### Fixed
+
+- **Blank window on macOS and Linux.** wry only intercepts `<scheme>://` custom-protocol URLs there (Windows uses `http://<scheme>.localhost`), and Inkwell always loaded the Windows form, so the webview requested a real HTTP page. The entry URL is now chosen per platform.
+- **Linux on Wayland.** The webview is created through GTK (`build_gtk`); wry's plain `build` only supports X11 on Linux.
+
+### Planned
+
+- Record a macOS and a Linux build/runtime result in `docs/PLATFORMS.md` (issue #16) by running `scripts/pipeline.py <tag> --validate-only` on those machines.
+- Code signing and VirusTotal submission hooks for future releases.
+- Installer branding and upgrade polish.
 
 ## [0.7.0] - 2026-11-09
 
@@ -187,22 +204,3 @@ Release candidate for 1.0, focused on editing and platform parity.
 - If you installed v0.1.0, uninstall it and install v0.1.1 (or later). Settings and API keys
   are preserved.
 
-## [Unreleased]
-
-### Added
-
-- **`--smoke-test`.** Opens the window, loads the UI and waits up to 30 seconds for the frontend to answer `app_ready` over IPC, then exits 0 (1 on timeout). It is the runtime check that works without an interactive desktop, so CI and packagers can verify a build actually renders.
-- **Runtime stage in the local pipeline.** `scripts/pipeline.py` now starts the built app with `--smoke-test` on every run and writes `dist/<tag>/runtime-report.md` (OS, architecture, Rust host, webview/IPC result). `--skip-runtime` records an explicit skip instead.
-- **`--validate-only` pipeline mode.** `python scripts/pipeline.py <tag> --validate-only` builds, tests and records a runtime result on macOS and Linux too, then stops without packaging or publishing — the same local pipeline, no hosted CI.
-- **`docs/PLATFORMS.md`**: build requirements, validation checklist, known limitations and the per-platform status table.
-
-### Fixed
-
-- **Blank window on macOS and Linux.** wry only intercepts `<scheme>://` custom-protocol URLs there (Windows uses `http://<scheme>.localhost`), and Inkwell always loaded the Windows form, so the webview requested a real HTTP page. The entry URL is now chosen per platform.
-- **Linux on Wayland.** The webview is created through GTK (`build_gtk`); wry's plain `build` only supports X11 on Linux.
-
-### Planned
-
-- Record a macOS and a Linux build/runtime result in `docs/PLATFORMS.md` (issue #16) by running `scripts/pipeline.py <tag> --validate-only` on those machines.
-- Code signing and VirusTotal submission hooks for future releases.
-- Installer branding and upgrade polish.
