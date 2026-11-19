@@ -190,6 +190,13 @@ pub fn default_providers() -> Vec<ProviderConfig> {
             "deepseek-v4.1-flash",
         ),
         preset(
+            "synap",
+            "Synap",
+            "openai",
+            "https://synap402.com/v1",
+            "synap-v1",
+        ),
+        preset(
             "xai",
             "xAI",
             "openai",
@@ -881,6 +888,19 @@ mod tests {
             "https://api.cheaperinference.com/v1"
         );
         assert_eq!(cheaperinference.model, "gpt-5.4-mini");
+    }
+
+    #[test]
+    fn synap_preset_is_wired() {
+        let providers = default_providers();
+        let synap = providers
+            .iter()
+            .find(|p| p.id == "synap")
+            .expect("synap preset exists");
+        assert_eq!(synap.kind, "openai");
+        assert_eq!(synap.base_url, "https://synap402.com/v1");
+        assert_eq!(synap.model, "synap-v1");
+        assert!(synap.api_key.is_empty());
     }
 
     #[test]

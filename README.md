@@ -122,8 +122,8 @@ checksums and verification commands are published with every release.
   a side-by-side split view with live preview, outline with scroll-spy, reading progress,
   print/PDF, dark & light themes, frameless window with native drag and resize.
 - **Any model, your key** - OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek,
-  OpenRouter, Demon Route, Cheaper Inference, API Route, xAI, Ollama, LM Studio, or any OpenAI-compatible
-  endpoint.
+  OpenRouter, Demon Route, Cheaper Inference, API Route, Synap, xAI, Ollama, LM Studio, or any
+  OpenAI-compatible endpoint.
 - **Real streaming** - SSE parsing in Rust, token-by-token markdown rendering, a separate
   collapsible *Reasoning* channel for reasoning models, and a Stop button that interrupts a
   stalled request instead of waiting for the next token.
@@ -227,6 +227,7 @@ Outputs land in `dist\v0.4.0\`: `inkwell-v0.4.0-windows-x86_64.zip`,
 | Demon Route | `openai` | `https://api.demonroute.com/v1` |
 | Cheaper Inference | `openai` | `https://api.cheaperinference.com/v1` |
 | API Route | `openai` | `https://global.api-route.com/v1` |
+| Synap | `openai` | `https://synap402.com/v1` |
 | xAI | `openai` | `https://api.x.ai/v1` |
 | Ollama | `openai` | `http://localhost:11434/v1` |
 | LM Studio | `openai` | `http://localhost:1234/v1` |
@@ -234,6 +235,10 @@ Outputs land in `dist\v0.4.0\`: `inkwell-v0.4.0-windows-x86_64.zip`,
 
 "OpenAI-compatible" covers vLLM, LiteLLM, llama.cpp's server, Together, Fireworks and
 anything else that speaks `/chat/completions` with SSE.
+
+Synap (`synap402.com`) is an inference gateway operated by Linkrra; `synap-v1` routes each
+request to whichever underlying model it serves can do the job, billed at that model's price -
+see the third-party disclosure above for what that means for your prompts and keys.
 
 Preset model names are starting points and providers rename models often. Use **Fetch list**
 to see what your key can actually reach, then pick from the datalist.
